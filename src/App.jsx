@@ -27,7 +27,25 @@ const formatCurrency = (val) => {
 export default function App() {
   const [products, setProducts] = useState([]);
   const [promos, setPromos] = useState([]);
-  const [cart, setCart] = useState([]);
+
+  // CARRITO LOCAL E INDEPENDIENTE POR DISPOSITIVO
+  const [cart, setCart] = useState(() => {
+    try {
+      const savedCart = localStorage.getItem('benga_cart');
+      return savedCart ? JSON.parse(savedCart) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Guardar en el dispositivo cada vez que cambia el carrito
+  useEffect(() => {
+    try {
+      localStorage.setItem('benga_cart', JSON.stringify(cart));
+    } catch (e) {
+      console.error('Error guardando en localStorage:', e);
+    }
+  }, [cart]);
 
   // BÚSQUEDA Y FILTRADO
   const [searchTerm, setSearchTerm] = useState('');
@@ -243,7 +261,7 @@ export default function App() {
       if (address.trim()) waMessage += `📍 *Dirección:* ${address.trim()}\n`;
       waMessage += `💳 *Medio de Pago:* ${paymentMethod}\n`;
       if (paymentMethod === 'Mixto') {
-        waMessage += `   👉 Efec: ${formatCurrency(efec)} | Transf: ${formatCurrency(transf)}\n`;
+        waMessage += `    👉 Efec: ${formatCurrency(efec)} | Transf: ${formatCurrency(transf)}\n`;
       }
       waMessage += `\n🛒 *DETALLE DEL PEDIDO:*\n`;
       processedCart.forEach((it) => {
@@ -258,6 +276,7 @@ export default function App() {
       setOrderSentSuccess(true);
       setShowCartModal(false);
       setCart([]);
+      localStorage.removeItem('benga_cart');
 
       window.open(waUrl, '_blank');
     } catch (err) {
@@ -327,7 +346,6 @@ export default function App() {
           </div>
         )}
 
-        {/* GRILLA VISUAL PARA EL CLIENTE CON FOTOS GRANDES */}
         <div className="grid grid-cols-2 gap-3">
           {filteredCatalog.map((item) => {
             const hasComboDiscount = !item.isPromo && hasPromoInCart && item.comboPrice > 0;
@@ -344,7 +362,6 @@ export default function App() {
                     : 'bg-slate-900/80 border-slate-800'
                 }`}
               >
-                {/* IMAGEN DEL PRODUCTO / PROMO */}
                 <div className="h-32 bg-slate-950 relative overflow-hidden flex items-center justify-center border-b border-slate-800/80">
                   {item.imageUrl ? (
                     <img
@@ -363,7 +380,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* DETALLES Y BOTÓN DE SUMAR */}
                 <div className="p-3 space-y-1.5 flex-1 flex flex-col justify-between">
                   <div>
                     <h3 className="font-bold text-xs text-white line-clamp-1">{item.name}</h3>
@@ -406,7 +422,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* BARRA FLOTANTE DE MI PEDIDO */}
       {processedCart.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 z-30 max-w-md mx-auto">
           <button
@@ -424,7 +439,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL CARRITO / FINALIZAR PEDIDO */}
       {showCartModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -581,7 +595,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL ÉXITO */}
       {orderSentSuccess && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 text-center space-y-4 shadow-2xl">
