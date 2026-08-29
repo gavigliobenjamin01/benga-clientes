@@ -83,12 +83,10 @@ export default function App() {
     };
   }, []);
 
-  // 🔍 VALIDAR SI UN COMBO TIENE ALÚN COMPONENTE SIN STOCK (stock <= 0 o stock indefinido/0)
   const isPromoOutOfStock = (promo) => {
     if (!promo.items || promo.items.length === 0) return false;
     return promo.items.some((comp) => {
       const pObj = products.find((p) => p.id === comp.productId);
-      // Si el producto no existe o su stock es menor o igual a 0
       return !pObj || Number(pObj.stock ?? 0) < Number(comp.quantity || 1);
     });
   };
@@ -176,16 +174,22 @@ export default function App() {
   }, [products, promos, searchTerm, selectedCategory]);
 
   const addToCart = (item) => {
-    // Validar stock antes de agregar
     if (item.isPromo) {
       if (isPromoOutOfStock(item)) {
         alert('Este combo no se puede seleccionar porque uno o más productos se encuentran sin stock.');
         return;
       }
     } else {
-      const currentStock = Number(item.stock ?? 0);
-      if (currentStock <= 0) {
-        alert('Este producto se encuentra sin stock.');
+      // Buscar stock actual actualizado desde la base de datos de productos
+      const freshProduct = products.find((p) => p.id === item.id);
+      const currentStock = Number(freshProduct?.stock ?? item.stock ?? 0);
+
+      // Ver cuántas unidades de este producto ya tiene el cliente en el carrito
+      const existingInCart = cart.find((i) => i.id === item.id && !i.isPromo);
+      const currentQtyInCart = existingInCart ? existingInCart.qty : 0;
+
+      if (currentQtyInCart + 1 > currentStock) {
+        alert(`No podés agregar más unidades. Stock disponible: ${currentStock}`);
         return;
       }
     }
@@ -235,20 +239,32 @@ export default function App() {
     }
   };
 
-  // 🧊 LISTA DE HIELOS FILTRANDO LOS QUE TENGAN STOCK > 0
   const iceOptions = useMemo(() => {
     return products.filter(p => 
       ((p.name || '').toLowerCase().includes('hielo') || (p.category || '').toLowerCase().includes('hielo'))
     );
   }, [products]);
 
+  // 🔒 VALIDAR STOCK AL SUMAR DESDE EL CARRITO (+ / -)
   const updateQty = (id, isPromo, delta) => {
     setCart((prev) =>
       prev
         .map((item) => {
           if (item.id === id && (item.type === 'promo') === isPromo) {
             const newQty = item.qty + delta;
-            return newQty <= 0 ? null : { ...item, qty: newQty };
+            if (newQty <= 0) return null;
+
+            // Si es un producto unitario, verificar que no supere el stock de Firestore
+            if (!isPromo) {
+              const freshProduct = products.find((p) => p.id === id);
+              const currentStock = Number(freshProduct?.stock ?? 0);
+              if (delta > 0 && newQty > currentStock) {
+                alert(`Stock máximo alcanzado. Solo hay ${currentStock} unidades disponibles.`);
+                return item; // No deja subir la cantidad
+              }
+            }
+
+            return { ...item, qty: newQty };
           }
           return item;
         })
@@ -526,7 +542,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* 🚀 1. LISTA DE PRODUCTOS DEL CARRITO PRIMERO */}
+            {/* 🚀 1. LISTA DE PRODUCTOS DEL CARRITO (CON TOPE DE STOCK) */}
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
               {processedCart.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
@@ -577,7 +593,7 @@ export default function App() {
               )}
             </div>
 
-            {/* 🚀 2. SUGERIDOS RÁPIDOS (VALIDANDO STOCK EN HIELOS) */}
+            {/* 🚀 2. SUGERIDOS RÁPIDOS */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
@@ -766,7 +782,7 @@ export default function App() {
       )}
 
       {orderSentSuccess && (
-        <div className="fixed insecure-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 text-center space-y-4 shadow-2xl">
             <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/40">
               <CheckCircle2 className="w-10 h-10" />
