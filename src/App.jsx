@@ -481,7 +481,7 @@ export default function App() {
 
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
               {processedCart.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-4">Tu carrito está vacío.</p>
+                <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
               ) : (
                 processedCart.map((item) => (
                   <div
@@ -529,7 +529,7 @@ export default function App() {
               )}
             </div>
 
-            {/* 🚀 SUGERIDOS RÁPIDOS SIEMPRE VISIBLES DENTRO DEL MODAL */}
+            {/* 🚀 SUGERIDOS RÁPIDOS SIEMPRE VISIBLES (INDEPENDIENTE DEL CARRITO) */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
