@@ -584,7 +584,80 @@ export default function App() {
               ))}
             </div>
 
-            <form onSubmit={handleSendOrder} className="space-y-3 pt-3 border-t border-slate-800 text-xs">
+            {/* 🚀 SUGERIDOS RÁPIDOS DENTRO DEL CARRITO */}
+            <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
+              <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
+              </span>
+              <div className="grid grid-cols-2 gap-2 relative">
+                
+                {/* BOTÓN HIELO CON MINI PESTAÑA */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowIceSelector(!showIceSelector)}
+                    className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                  >
+                    <span>🧊</span> Hielo (Elegir)
+                  </button>
+
+                  {showIceSelector && (
+                    <div className="absolute bottom-full left-0 mb-2 w-full bg-slate-950 border border-sky-500/50 rounded-2xl p-2 shadow-2xl z-50 space-y-1.5 backdrop-blur-md animate-fadeIn">
+                      <div className="flex justify-between items-center px-1 pb-1 border-b border-slate-800">
+                        <span className="text-[10px] font-bold text-sky-400 uppercase">Seleccioná Hielo:</span>
+                        <button onClick={() => setShowIceSelector(false)} className="text-slate-400 hover:text-white">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {iceOptions.length === 0 ? (
+                        <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos disponibles.</p>
+                      ) : (
+                        iceOptions.map((ice) => {
+                          const comboP = Number(ice.comboPrice || 0);
+                          const normalP = Number(ice.sellPrice || ice.price || 0);
+                          const isComboEligible = hasPromoInCart && comboP > 0;
+                          const finalIcePrice = isComboEligible ? comboP : normalP;
+
+                          return (
+                            <button
+                              key={ice.id}
+                              onClick={() => {
+                                addToCart({ ...ice, isPromo: false });
+                                setShowIceSelector(false);
+                              }}
+                              className="w-full text-left bg-slate-900 hover:bg-sky-500/20 border border-slate-800 hover:border-sky-500/40 p-2 rounded-xl transition flex justify-between items-center text-xs"
+                            >
+                              <span className="font-medium text-slate-200 truncate pr-1">{ice.name}</span>
+                              <div className="text-right whitespace-nowrap">
+                                <span className="font-mono text-emerald-400 font-bold block">
+                                  {formatCurrency(finalIcePrice)}
+                                </span>
+                                {isComboEligible && (
+                                  <span className="font-mono text-[9px] text-slate-500 line-through block">
+                                    {formatCurrency(normalP)}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* BOTÓN VASO 1L */}
+                <button
+                  onClick={() => handleAddSuggested(['vaso'])}
+                  className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                >
+                  <span>🥤</span> Vaso 1L
+                </button>
+              </div>
+            </div>
+            {/* FIN SUGERIDOS RÁPIDOS */}
+
+            <form onSubmit={handleSendOrder} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
               <div>
                 <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
                   <User className="w-3.5 h-3.5 text-fuchsia-400" /> Tu Nombre / Apodo:
