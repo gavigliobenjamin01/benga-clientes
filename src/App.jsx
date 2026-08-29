@@ -479,6 +479,7 @@ export default function App() {
               </button>
             </div>
 
+            {/* 🚀 1. LISTA DE PRODUCTOS DEL CARRITO PRIMERO */}
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
               {processedCart.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
@@ -529,7 +530,7 @@ export default function App() {
               )}
             </div>
 
-            {/* 🚀 SUGERIDOS RÁPIDOS SIEMPRE VISIBLES (INDEPENDIENTE DEL CARRITO) */}
+            {/* 🚀 2. SUGERIDOS RÁPIDOS SIEMPRE VISIBLES (ARRIBA DE LOS DATOS DEL CLIENTE) */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
@@ -600,8 +601,8 @@ export default function App() {
                 </button>
               </div>
             </div>
-            {/* FIN SUGERIDOS RÁPIDOS */}
 
+            {/* 🚀 3. DATOS DEL CLIENTE Y FORMULARIO */}
             <form onSubmit={handleSendOrder} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
               <div>
                 <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
