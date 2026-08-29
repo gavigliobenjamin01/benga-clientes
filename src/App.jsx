@@ -441,90 +441,22 @@ export default function App() {
         </div>
       </main>
 
-      {/* 🚀 BOTONERA DE UPSELL (HIELO CON DESPLEGABLE + VASO) Y BOTÓN DE CARRITO */}
-      <div className="fixed bottom-4 left-4 right-4 z-30 max-w-md mx-auto space-y-2">
-        
-        {/* BARRA DE SUGERIDOS RÁPIDOS */}
-        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-800 p-2 rounded-2xl shadow-xl grid grid-cols-2 gap-2 relative">
-          
-          {/* BOTÓN HIELO CON MINI PESTAÑA */}
-          <div className="relative">
-            <button
-              onClick={() => setShowIceSelector(!showIceSelector)}
-              className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
-            >
-              <span>🧊</span> Hielo (Elegir)
-            </button>
-
-            {showIceSelector && (
-              <div className="absolute bottom-full left-0 mb-2 w-full bg-slate-950 border border-sky-500/50 rounded-2xl p-2 shadow-2xl z-50 space-y-1.5 backdrop-blur-md animate-fadeIn">
-                <div className="flex justify-between items-center px-1 pb-1 border-b border-slate-800">
-                  <span className="text-[10px] font-bold text-sky-400 uppercase">Seleccioná Hielo:</span>
-                  <button onClick={() => setShowIceSelector(false)} className="text-slate-400 hover:text-white">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {iceOptions.length === 0 ? (
-                  <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos disponibles.</p>
-                ) : (
-                  iceOptions.map((ice) => {
-                    const comboP = Number(ice.comboPrice || 0);
-                    const normalP = Number(ice.sellPrice || ice.price || 0);
-                    const isComboEligible = hasPromoInCart && comboP > 0;
-                    const finalIcePrice = isComboEligible ? comboP : normalP;
-
-                    return (
-                      <button
-                        key={ice.id}
-                        onClick={() => {
-                          addToCart({ ...ice, isPromo: false });
-                          setShowIceSelector(false);
-                        }}
-                        className="w-full text-left bg-slate-900 hover:bg-sky-500/20 border border-slate-800 hover:border-sky-500/40 p-2 rounded-xl transition flex justify-between items-center text-xs"
-                      >
-                        <span className="font-medium text-slate-200 truncate pr-1">{ice.name}</span>
-                        <div className="text-right whitespace-nowrap">
-                          <span className="font-mono text-emerald-400 font-bold block">
-                            {formatCurrency(finalIcePrice)}
-                          </span>
-                          {isComboEligible && (
-                            <span className="font-mono text-[9px] text-slate-500 line-through block">
-                              {formatCurrency(normalP)}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* BOTÓN VASO 1L */}
+      {processedCart.length > 0 && (
+        <div className="fixed bottom-4 left-4 right-4 z-30 max-w-md mx-auto">
           <button
-            onClick={() => handleAddSuggested(['vaso'])}
-            className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+            onClick={() => setShowCartModal(true)}
+            className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold p-4 rounded-2xl shadow-2xl shadow-fuchsia-500/40 flex items-center justify-between transition border border-fuchsia-300/40"
           >
-            <span>🥤</span> Vaso 1L
+            <div className="flex items-center gap-2">
+              <span className="bg-slate-950 text-fuchsia-400 font-mono text-xs px-2.5 py-1 rounded-xl">
+                {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'}
+              </span>
+              <span className="text-sm font-bold">Ver Mi Pedido</span>
+            </div>
+            <span className="font-mono text-lg font-black">{formatCurrency(cartTotal)}</span>
           </button>
         </div>
-
-        {/* BOTÓN PRINCIPAL DE VER CARRITO */}
-        <button
-          onClick={() => setShowCartModal(true)}
-          className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold p-4 rounded-2xl shadow-2xl shadow-fuchsia-500/40 flex items-center justify-between transition border border-fuchsia-300/40"
-        >
-          <div className="flex items-center gap-2">
-            <span className="bg-slate-950 text-fuchsia-400 font-mono text-xs px-2.5 py-1 rounded-xl">
-              {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'}
-            </span>
-            <span className="text-sm font-bold">Ver Mi Pedido</span>
-          </div>
-          <span className="font-mono text-lg font-black">{formatCurrency(cartTotal)}</span>
-        </button>
-      </div>
+      )}
 
       {showCartModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -584,7 +516,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* 🚀 SUGERIDOS RÁPIDOS DENTRO DEL CARRITO */}
+            {/* 🚀 SUGERIDOS RÁPIDOS DENTRO DEL MODAL DEL CARRITO */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
