@@ -88,14 +88,19 @@ export default function App() {
   }, []);
 
   const hasPromoInCart = useMemo(() => {
-    return cart.some((item) => item.type === 'promo' || item.isPromo);
+    return cart.some((item) => 
+      item.type === 'promo' || 
+      item.isPromo || 
+      (item.name || '').toLowerCase().includes('combo') ||
+      (item.raw?.category || '').toLowerCase().includes('promo')
+    );
   }, [cart]);
 
   const processedCart = useMemo(() => {
     return cart.map((item) => {
-      if (item.type === 'product') {
-        const comboP = item.raw?.comboPrice || item.comboPrice || 0;
-        const normalP = item.raw?.sellPrice || item.raw?.price || item.price || 0;
+      if (item.type === 'product' || !item.isPromo) {
+        const comboP = Number(item.raw?.comboPrice || item.comboPrice || 0);
+        const normalP = Number(item.raw?.sellPrice || item.raw?.price || item.sellPrice || item.price || 0);
         const isDiscountApplied = hasPromoInCart && comboP > 0;
         const effectivePrice = isDiscountApplied ? comboP : normalP;
 
@@ -106,7 +111,11 @@ export default function App() {
           isDiscountApplied
         };
       }
-      return item;
+      return {
+        ...item,
+        price: Number(item.price || 0),
+        isDiscountApplied: false
+      };
     });
   }, [cart, hasPromoInCart]);
 
@@ -471,52 +480,56 @@ export default function App() {
             </div>
 
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-              {processedCart.map((item) => (
-                <div
-                  key={`${item.id}-${item.type}`}
-                  className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs"
-                >
-                  <div className="truncate flex-1 pr-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-white truncate">{item.name}</span>
-                      {item.isDiscountApplied && (
-                        <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
-                          Combo
+              {processedCart.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-4">Tu carrito está vacío.</p>
+              ) : (
+                processedCart.map((item) => (
+                  <div
+                    key={`${item.id}-${item.type}`}
+                    className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs"
+                  >
+                    <div className="truncate flex-1 pr-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-white truncate">{item.name}</span>
+                        {item.isDiscountApplied && (
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                            Combo
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {formatCurrency(item.price * item.qty)}
                         </span>
-                      )}
+                        {item.isDiscountApplied && (
+                          <span className="font-mono text-[10px] text-slate-500 line-through">
+                            {formatCurrency(item.normalPrice * item.qty)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <span className="font-mono text-emerald-400 font-bold">
-                        {formatCurrency(item.price * item.qty)}
-                      </span>
-                      {item.isDiscountApplied && (
-                        <span className="font-mono text-[10px] text-slate-500 line-through">
-                          {formatCurrency(item.normalPrice * item.qty)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => updateQty(item.id, item.type === 'promo', -1)}
-                      className="text-slate-400 hover:text-white px-1 font-bold"
-                    >
-                      -
-                    </button>
-                    <span className="font-mono font-bold text-white px-1">{item.qty}</span>
-                    <button
-                      onClick={() => updateQty(item.id, item.type === 'promo', 1)}
-                      className="text-slate-400 hover:text-white px-1 font-bold"
-                    >
-                      +
-                    </button>
+                    <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', -1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-bold text-white px-1">{item.qty}</span>
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', 1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
-            {/* 🚀 SUGERIDOS RÁPIDOS DENTRO DEL MODAL DEL CARRITO */}
+            {/* 🚀 SUGERIDOS RÁPIDOS SIEMPRE VISIBLES DENTRO DEL MODAL */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
