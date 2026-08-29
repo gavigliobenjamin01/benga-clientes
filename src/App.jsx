@@ -56,6 +56,7 @@ export default function App() {
 
   // DATOS DEL CLIENTE
   const [clientName, setClientName] = useState('');
+  const [deliveryType, setDeliveryType] = useState('retiro'); // 'retiro' o 'envio'
   const [address, setAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Efectivo');
   const [paidEfectivo, setPaidEfectivo] = useState('');
@@ -326,7 +327,8 @@ export default function App() {
       const newOrder = {
         orderNumber: orderNumber, // Guardamos el número en Firebase para tu panel admin
         clientName: clientName.trim(),
-        address: address.trim(),
+        deliveryType: deliveryType,
+        address: deliveryType === 'envio' ? address.trim() : 'Retira en el local',
         paymentMethod,
         paidEfectivo: paymentMethod === 'Mixto' ? efec : (paymentMethod === 'Efectivo' ? cartTotal : 0),
         paidTransferencia: paymentMethod === 'Mixto' ? transf : (paymentMethod === 'Transferencia' ? cartTotal : 0),
@@ -701,19 +703,6 @@ export default function App() {
 
               <div>
                 <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Dirección de Entrega:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: San Martín 123, Dpto 2B"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
                   <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> ¿Cómo vas a abonar?:
                 </label>
                 <select
@@ -733,6 +722,60 @@ export default function App() {
                   <option value="Transferencia">📲 Transferencia / Mercado Pago</option>
                   <option value="Mixto">🔀 Pago Mixto (Parte Efec + Parte Transf)</option>
                 </select>
+              </div>
+
+              {/* 🚀 RETIRO O ENVÍO CON AVISO PROFESIONAL */}
+              <div className="space-y-2 pt-1">
+                <label className="text-slate-300 block font-bold flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Tipo de Entrega:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('retiro')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'retiro'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'retiro' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'retiro' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Retiro en Local
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('envio')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'envio'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'envio' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'envio' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Envío a Domicilio
+                  </button>
+                </div>
+
+                {deliveryType === 'envio' && (
+                  <div className="space-y-2 pt-1 animate-fadeIn">
+                    <input
+                      required={deliveryType === 'envio'}
+                      type="text"
+                      placeholder="Ingresá tu dirección (Calle y número, depto)"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full bg-slate-950 border border-fuchsia-500/40 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    />
+                    <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 p-2.5 rounded-xl text-[11px] text-fuchsia-200 leading-relaxed">
+                      🛵 <strong>Aviso de Envío:</strong> El costo de envío se calcula según la distancia (a partir de $1.500 en adelante según las cuadras). Se te confirmará al coordinar la entrega.
+                    </div>
+                  </div>
+                )}
               </div>
 
               {paymentMethod === 'Mixto' && (
