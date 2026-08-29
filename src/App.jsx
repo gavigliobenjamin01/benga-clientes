@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 import { db } from './firebase';
 import {
   Sparkles,
@@ -180,11 +180,9 @@ export default function App() {
         return;
       }
     } else {
-      // Buscar stock actual actualizado desde la base de datos de productos
       const freshProduct = products.find((p) => p.id === item.id);
       const currentStock = Number(freshProduct?.stock ?? item.stock ?? 0);
 
-      // Ver cuántas unidades de este producto ya tiene el cliente en el carrito
       const existingInCart = cart.find((i) => i.id === item.id && !i.isPromo);
       const currentQtyInCart = existingInCart ? existingInCart.qty : 0;
 
@@ -245,7 +243,6 @@ export default function App() {
     );
   }, [products]);
 
-  // 🔒 VALIDAR STOCK AL SUMAR DESDE EL CARRITO (+ / -)
   const updateQty = (id, isPromo, delta) => {
     setCart((prev) =>
       prev
@@ -254,13 +251,12 @@ export default function App() {
             const newQty = item.qty + delta;
             if (newQty <= 0) return null;
 
-            // Si es un producto unitario, verificar que no supere el stock de Firestore
             if (!isPromo) {
               const freshProduct = products.find((p) => p.id === id);
               const currentStock = Number(freshProduct?.stock ?? 0);
               if (delta > 0 && newQty > currentStock) {
                 alert(`Stock máximo alcanzado. Solo hay ${currentStock} unidades disponibles.`);
-                return item; // No deja subir la cantidad
+                return item;
               }
             }
 
@@ -294,6 +290,21 @@ export default function App() {
     setPaidEfectivo(remaining > 0 ? remaining.toString() : '0');
   };
 
+  // 🚀 FUNCIÓN PARA OBTENER EL NÚMERO DE PEDIDO (EMPIEZA EN 65)
+  const getNextOrderNumber = async () => {
+    const counterRef = doc(db, 'counters', 'orderCounter');
+    const counterSnap = await getDoc(counterRef);
+
+    if (!counterSnap.exists()) {
+      await setDoc(counterRef, { current: 65 });
+      return 65;
+    } else {
+      await updateDoc(counterRef, { current: increment(1) });
+      const updatedSnap = await getDoc(counterRef);
+      return updatedSnap.data().current;
+    }
+  };
+
   const handleSendOrder = async (e) => {
     e.preventDefault();
     if (processedCart.length === 0) return;
@@ -305,37 +316,31 @@ export default function App() {
 
     setIsSending(true);
 
-    const efec = parseFloat(paidEfectivo) || 0;
-    const transf = parseFloat(paidTransferencia) || 0;
-
-    const newOrder = {
-      clientName: clientName.trim(),
-      address: address.trim(),
-      paymentMethod,
-      paidEfectivo: paymentMethod === 'Mixto' ? efec : (paymentMethod === 'Efectivo' ? cartTotal : 0),
-      paidTransferencia: paymentMethod === 'Mixto' ? transf : (paymentMethod === 'Transferencia' ? cartTotal : 0),
-      items: processedCart,
-      total: cartTotal,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-
     try {
+      // 1. Obtener número de pedido correlativo (desde 65)
+      const orderNumber = await getNextOrderNumber();
+
+      const efec = parseFloat(paidEfectivo) || 0;
+      const transf = parseFloat(paidTransferencia) || 0;
+
+      const newOrder = {
+        orderNumber: orderNumber, // Guardamos el número en Firebase para tu panel admin
+        clientName: clientName.trim(),
+        address: address.trim(),
+        paymentMethod,
+        paidEfectivo: paymentMethod === 'Mixto' ? efec : (paymentMethod === 'Efectivo' ? cartTotal : 0),
+        paidTransferencia: paymentMethod === 'Mixto' ? transf : (paymentMethod === 'Transferencia' ? cartTotal : 0),
+        items: processedCart,
+        total: cartTotal,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // 2. Guardar en Firestore
       await addDoc(collection(db, 'orders'), newOrder);
 
-      let waMessage = `🍹 *NUEVO PEDIDO - BENGA DRINKS*\n\n`;
-      waMessage += `👤 *Cliente:* ${clientName.trim()}\n`;
-      if (address.trim()) waMessage += `📍 *Dirección:* ${address.trim()}\n`;
-      waMessage += `💳 *Medio de Pago:* ${paymentMethod}\n`;
-      if (paymentMethod === 'Mixto') {
-        waMessage += `    👉 Efec: ${formatCurrency(efec)} | Transf: ${formatCurrency(transf)}\n`;
-      }
-      waMessage += `\n🛒 *DETALLE DEL PEDIDO:*\n`;
-      processedCart.forEach((it) => {
-        const discountTag = it.isDiscountApplied ? ' 🔥(Precio Combo)' : '';
-        waMessage += `• ${it.qty}x ${it.name}${discountTag} - ${formatCurrency(it.price * it.qty)}\n`;
-      });
-      waMessage += `\n💰 *TOTAL: ${formatCurrency(cartTotal)}*`;
+      // 3. Armar mensaje corto a tu WhatsApp (solo aviso con número, sin resumen)
+      const waMessage = `¡Hola! Te hice un nuevo pedido N° ${orderNumber}`;
 
       const phoneNumber = '5491140821173'; 
       const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(waMessage)}`;
@@ -347,6 +352,7 @@ export default function App() {
 
       window.open(waUrl, '_blank');
     } catch (err) {
+      console.error(err);
       alert('Hubo un error al enviar tu pedido. Revisa tu conexión.');
     } finally {
       setIsSending(false);
@@ -542,7 +548,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* 🚀 1. LISTA DE PRODUCTOS DEL CARRITO (CON TOPE DE STOCK) */}
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
               {processedCart.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
@@ -593,14 +598,12 @@ export default function App() {
               )}
             </div>
 
-            {/* 🚀 2. SUGERIDOS RÁPIDOS */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
               </span>
               <div className="grid grid-cols-2 gap-2 relative">
                 
-                {/* BOTÓN HIELO CON MINI PESTAÑITA */}
                 <div className="relative">
                   <button
                     onClick={() => setShowIceSelector(!showIceSelector)}
@@ -672,7 +675,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* BOTÓN VASO 1L */}
                 <button
                   onClick={() => handleAddSuggested(['vaso'])}
                   className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
@@ -682,7 +684,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* 🚀 3. DATOS DEL CLIENTE Y FORMULARIO */}
             <form onSubmit={handleSendOrder} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
               <div>
                 <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
