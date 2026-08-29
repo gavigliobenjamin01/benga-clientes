@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   X,
   Tag,
-  Image as ImageIcon
+  Image as ImageIcon,
+  AlertCircle
 } from 'lucide-react';
 
 const formatCurrency = (val) => {
@@ -38,7 +39,6 @@ export default function App() {
     }
   });
 
-  // Guardar en el dispositivo cada vez que cambia el carrito
   useEffect(() => {
     try {
       localStorage.setItem('benga_cart', JSON.stringify(cart));
@@ -68,16 +68,12 @@ export default function App() {
 
   useEffect(() => {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
-      const list = snapshot.docs
-        .map((d) => ({ ...d.data(), id: d.id }))
-        .filter((p) => p.stock > 0);
+      const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
       setProducts(list);
     });
 
     const unsubPromos = onSnapshot(collection(db, 'promos'), (snapshot) => {
-      const list = snapshot.docs
-        .map((d) => ({ ...d.data(), id: d.id }))
-        .filter((p) => p.active);
+      const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
       setPromos(list);
     });
 
@@ -86,6 +82,16 @@ export default function App() {
       unsubPromos();
     };
   }, []);
+
+  // 🔍 VALIDAR SI UN COMBO TIENE ALÚN COMPONENTE SIN STOCK (stock <= 0 o stock indefinido/0)
+  const isPromoOutOfStock = (promo) => {
+    if (!promo.items || promo.items.length === 0) return false;
+    return promo.items.some((comp) => {
+      const pObj = products.find((p) => p.id === comp.productId);
+      // Si el producto no existe o su stock es menor o igual a 0
+      return !pObj || Number(pObj.stock ?? 0) < Number(comp.quantity || 1);
+    });
+  };
 
   const hasPromoInCart = useMemo(() => {
     return cart.some((item) => 
@@ -170,6 +176,20 @@ export default function App() {
   }, [products, promos, searchTerm, selectedCategory]);
 
   const addToCart = (item) => {
+    // Validar stock antes de agregar
+    if (item.isPromo) {
+      if (isPromoOutOfStock(item)) {
+        alert('Este combo no se puede seleccionar porque uno o más productos se encuentran sin stock.');
+        return;
+      }
+    } else {
+      const currentStock = Number(item.stock ?? 0);
+      if (currentStock <= 0) {
+        alert('Este producto se encuentra sin stock.');
+        return;
+      }
+    }
+
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id && i.isPromo === item.isPromo);
       if (existing) {
@@ -203,20 +223,23 @@ export default function App() {
     });
   };
 
-  // 🚀 AGREGAR VASO DIRECTO
   const handleAddSuggested = (keywords) => {
     const foundProduct = products.find(p =>
-      keywords.some(kw => (p.name || '').toLowerCase().includes(kw))
+      keywords.some(kw => (p.name || '').toLowerCase().includes(kw)) && Number(p.stock ?? 0) > 0
     );
 
     if (foundProduct) {
       addToCart({ ...foundProduct, isPromo: false });
+    } else {
+      alert('El producto sugerido se encuentra sin stock actualmente.');
     }
   };
 
-  // 🧊 LISTA DE HIELOS EN EL INVENTARIO PARA EL CLIENTE
+  // 🧊 LISTA DE HIELOS FILTRANDO LOS QUE TENGAN STOCK > 0
   const iceOptions = useMemo(() => {
-    return products.filter(p => (p.name || '').toLowerCase().includes('hielo') || (p.category || '').toLowerCase().includes('hielo'));
+    return products.filter(p => 
+      ((p.name || '').toLowerCase().includes('hielo') || (p.category || '').toLowerCase().includes('hielo'))
+    );
   }, [products]);
 
   const updateQty = (id, isPromo, delta) => {
@@ -376,6 +399,7 @@ export default function App() {
 
         <div className="grid grid-cols-2 gap-3">
           {filteredCatalog.map((item) => {
+            const outOfStock = item.isPromo ? isPromoOutOfStock(item) : Number(item.stock ?? 0) <= 0;
             const hasComboDiscount = !item.isPromo && hasPromoInCart && item.comboPrice > 0;
             const displayPrice = item.isPromo
               ? item.price
@@ -385,9 +409,11 @@ export default function App() {
               <div
                 key={`${item.isPromo ? 'pr' : 'prod'}-${item.id}`}
                 className={`border rounded-3xl overflow-hidden transition flex flex-col justify-between shadow-xl ${
-                  item.isPromo
-                    ? 'bg-fuchsia-950/20 border-fuchsia-500/40'
-                    : 'bg-slate-900/80 border-slate-800'
+                  outOfStock 
+                    ? 'opacity-60 bg-slate-950 border-slate-800 grayscale' 
+                    : item.isPromo
+                      ? 'bg-fuchsia-950/20 border-fuchsia-500/40'
+                      : 'bg-slate-900/80 border-slate-800'
                 }`}
               >
                 <div className="h-32 bg-slate-950 relative overflow-hidden flex items-center justify-center border-b border-slate-800/80">
@@ -406,6 +432,14 @@ export default function App() {
                   <span className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase text-fuchsia-400 border border-slate-800">
                     {item.isPromo ? '🔥 Promo' : item.brand}
                   </span>
+
+                  {outOfStock && (
+                    <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px] flex items-center justify-center">
+                      <span className="bg-red-500/20 border border-red-500/40 text-red-400 font-bold text-[10px] px-2.5 py-1 rounded-xl uppercase tracking-wider">
+                        Sin Stock
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-3 space-y-1.5 flex-1 flex flex-col justify-between">
@@ -420,19 +454,32 @@ export default function App() {
 
                   <div className="flex items-center justify-between pt-1">
                     <div>
-                      <span className="font-mono text-sm font-black text-emerald-400 block">
-                        {formatCurrency(displayPrice)}
-                      </span>
-                      {hasComboDiscount && (
-                        <span className="font-mono text-[9px] text-slate-500 line-through">
-                          {formatCurrency(item.sellPrice || item.price)}
+                      {outOfStock ? (
+                        <span className="font-mono text-xs font-bold text-red-400 block">
+                          Sin stock
                         </span>
+                      ) : (
+                        <>
+                          <span className="font-mono text-sm font-black text-emerald-400 block">
+                            {formatCurrency(displayPrice)}
+                          </span>
+                          {hasComboDiscount && (
+                            <span className="font-mono text-[9px] text-slate-500 line-through">
+                              {formatCurrency(item.sellPrice || item.price)}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
 
                     <button
+                      disabled={outOfStock}
                       onClick={() => addToCart(item)}
-                      className="bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-300 border border-fuchsia-500/40 p-2.5 rounded-xl transition"
+                      className={`p-2.5 rounded-xl transition ${
+                        outOfStock 
+                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed' 
+                          : 'bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-300 border border-fuchsia-500/40'
+                      }`}
                     >
                       <Plus className="w-4 h-4 stroke-[2.5]" />
                     </button>
@@ -530,14 +577,14 @@ export default function App() {
               )}
             </div>
 
-            {/* 🚀 2. SUGERIDOS RÁPIDOS SIEMPRE VISIBLES (ARRIBA DE LOS DATOS DEL CLIENTE) */}
+            {/* 🚀 2. SUGERIDOS RÁPIDOS (VALIDANDO STOCK EN HIELOS) */}
             <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
               </span>
               <div className="grid grid-cols-2 gap-2 relative">
                 
-                {/* BOTÓN HIELO CON MINI PESTAÑA */}
+                {/* BOTÓN HIELO CON MINI PESTAÑITA */}
                 <div className="relative">
                   <button
                     onClick={() => setShowIceSelector(!showIceSelector)}
@@ -559,6 +606,8 @@ export default function App() {
                         <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos disponibles.</p>
                       ) : (
                         iceOptions.map((ice) => {
+                          const iceStock = Number(ice.stock ?? 0);
+                          const isIceOut = iceStock <= 0;
                           const comboP = Number(ice.comboPrice || 0);
                           const normalP = Number(ice.sellPrice || ice.price || 0);
                           const isComboEligible = hasPromoInCart && comboP > 0;
@@ -567,21 +616,36 @@ export default function App() {
                           return (
                             <button
                               key={ice.id}
+                              disabled={isIceOut}
                               onClick={() => {
-                                addToCart({ ...ice, isPromo: false });
-                                setShowIceSelector(false);
+                                if (!isIceOut) {
+                                  addToCart({ ...ice, isPromo: false });
+                                  setShowIceSelector(false);
+                                }
                               }}
-                              className="w-full text-left bg-slate-900 hover:bg-sky-500/20 border border-slate-800 hover:border-sky-500/40 p-2 rounded-xl transition flex justify-between items-center text-xs"
+                              className={`w-full text-left p-2 rounded-xl transition flex justify-between items-center text-xs border ${
+                                isIceOut 
+                                  ? 'bg-slate-950 opacity-50 border-slate-900 cursor-not-allowed' 
+                                  : 'bg-slate-900 hover:bg-sky-500/20 border-slate-800 hover:border-sky-500/40'
+                              }`}
                             >
-                              <span className="font-medium text-slate-200 truncate pr-1">{ice.name}</span>
+                              <span className={`font-medium truncate pr-1 ${isIceOut ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                                {ice.name}
+                              </span>
                               <div className="text-right whitespace-nowrap">
-                                <span className="font-mono text-emerald-400 font-bold block">
-                                  {formatCurrency(finalIcePrice)}
-                                </span>
-                                {isComboEligible && (
-                                  <span className="font-mono text-[9px] text-slate-500 line-through block">
-                                    {formatCurrency(normalP)}
-                                  </span>
+                                {isIceOut ? (
+                                  <span className="text-[10px] text-red-400 font-bold block">Sin stock</span>
+                                ) : (
+                                  <>
+                                    <span className="font-mono text-emerald-400 font-bold block">
+                                      {formatCurrency(finalIcePrice)}
+                                    </span>
+                                    {isComboEligible && (
+                                      <span className="font-mono text-[9px] text-slate-500 line-through block">
+                                        {formatCurrency(normalP)}
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </button>
@@ -702,7 +766,7 @@ export default function App() {
       )}
 
       {orderSentSuccess && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed insecure-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 text-center space-y-4 shadow-2xl">
             <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/40">
               <CheckCircle2 className="w-10 h-10" />
