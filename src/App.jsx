@@ -299,24 +299,18 @@ export default function App() {
     setPaidEfectivo(remaining > 0 ? remaining.toString() : '0');
   };
 
-  // 🚀 CAMBIADO A 19 PARA QUE EL SIGUIENTE SEA EXACTAMENTE EL NÚMERO 20
- // 🚀 NÚMERO DE PEDIDO FORZADO EN FIREBASE PARA QUE ARRANQUE EN 20
+ // 🚀 FORZAR EL CONTADOR A 19 EN FIREBASE PARA QUE EL PRÓXIMO SEA SIEMPRE 20
   const getNextOrderNumber = async () => {
     const counterRef = doc(db, 'counters', 'orderCounter');
-    const counterSnap = await getDoc(counterRef);
+    
+    // Forzamos el documento a que su valor sea siempre 19 antes de avanzar, 
+    // o podés borrar el contador viejo en Firestore y dejar que esto lo cree limpio.
+    await setDoc(counterRef, { current: 19 }, { merge: true });
 
-    if (!counterSnap.exists()) {
-      await setDoc(counterRef, { current: 19 });
-      return 20;
-    } else {
-      const currentVal = counterSnap.data().current;
-      // Si el número actual es mayor a 19 (ej: 77), lo blanqueamos a 19 para que el próximo sea 20
-      const targetVal = currentVal >= 20 ? 19 : currentVal;
-      
-      const nextVal = targetVal + 1;
-      await updateDoc(counterRef, { current: nextVal });
-      return nextVal;
-    }
+    // Actualizamos a 20 y devolvemos
+    await updateDoc(counterRef, { current: increment(1) });
+    const updatedSnap = await getDoc(counterRef);
+    return updatedSnap.data().current; // Esto devolverá exactamente 20
   };
 
   const handleSendOrder = async (e) => {
