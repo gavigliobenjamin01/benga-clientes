@@ -1,111 +1,139 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { toPng } from 'html-to-image';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, onSnapshot, addDoc, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { db } from './firebase';
 import {
-  Search,
-  Plus,
-  Trash2,
-  Download,
-  Share2,
-  X,
   Sparkles,
   ShoppingBag,
+  Plus,
+  Search,
+  Send,
   MapPin,
-  UserCheck,
+  User,
   DollarSign,
-  Receipt,
+  CheckCircle2,
+  X,
+  Tag,
   Image as ImageIcon,
-  ChevronDown,
-  ChevronUp
+  AlertCircle
 } from 'lucide-react';
-import { formatCurrency } from '../utils';
 
-// 🚀 FUNCIÓN DE OPTIMIZACIÓN DE IMÁGENES AL VUELO
-const getOptimizedImageUrl = (url) => {
-  if (!url) return '';
-  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp&q=75`;
+const formatCurrency = (val) => {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0
+  }).format(val || 0);
 };
 
-export default function SalesTab({
-  products = [],
-  promos = [],
-  clients = [],
-  onRegisterSale,
-  notify,
-  prefilledOrder
-}) {
-  const [cart, setCart] = useState([]);
+export default function App() {
+  const [products, setProducts] = useState([]);
+  const [promos, setPromos] = useState([]);
+
+  // CARRITO LOCAL E INDEPENDIENTE POR DISPOSITIVO
+  const [cart, setCart] = useState(() => {
+    try {
+      const savedCart = localStorage.getItem('benga_cart');
+      return savedCart ? JSON.parse(savedCart) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('benga_cart', JSON.stringify(cart));
+    } catch (e) {
+      console.error('Error guardando en localStorage:', e);
+    }
+  }, [cart]);
+
+  // BÚSQUEDA Y FILTRADO
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todas');
-  const [selectedClient, setSelectedClient] = useState('Cliente Casual');
-  const [paymentMethod, setPaymentMethod] = useState('Efectivo');
-  const [paidEfectivoInput, setPaidEfectivoInput] = useState('');
-  const [paidTransferenciaInput, setPaidTransferenciaInput] = useState('');
-  const [address, setAddress] = useState('');
-  const [shippingFeeInput, setShippingFeeInput] = useState('');
-  const [driverExtraInput, setDriverExtraInput] = useState('');
 
   // 🧊 ESTADO PARA LA MINI PESTAÑITA DE SELECCIÓN DE HIELO
   const [showIceSelector, setShowIceSelector] = useState(false);
 
-  // 🚀 ESTADO PARA CONTROLAR QUÉ COMBOS TIENEN EL DESPLEGABLE ABIERTO EN EL CARRITO
-  const [expandedCombos, setExpandedCombos] = useState({});
+  // DATOS DEL CLIENTE
+  const [clientName, setClientName] = useState('');
+  const [deliveryType, setDeliveryType] = useState('retiro'); // 'retiro' o 'envio'
+  const [address, setAddress] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Efectivo');
+  const [paidEfectivo, setPaidEfectivo] = useState('');
+  const [paidTransferencia, setPaidTransferencia] = useState('');
 
-  // TICKET VISUAL
-  const [ticketModalData, setTicketModalData] = useState(null);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const ticketRef = useRef(null);
+  // MODALES
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [orderSentSuccess, setOrderSentSuccess] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
-  // AUTO-CARGAR PEDIDO PROVENIENTE DE LA WEB DEL CLIENTE O DE REABRIR VENTA
   useEffect(() => {
-    if (prefilledOrder) {
-      if (prefilledOrder.items && prefilledOrder.items.length > 0) {
-        setCart(prefilledOrder.items);
-      }
-      if (prefilledOrder.clientName) {
-        setSelectedClient(prefilledOrder.clientName);
-      }
-      if (prefilledOrder.paymentMethod) {
-        setPaymentMethod(prefilledOrder.paymentMethod);
-        if (prefilledOrder.paymentMethod === 'Mixto') {
-          setPaidEfectivoInput((prefilledOrder.paidEfectivo || 0).toString());
-          setPaidTransferenciaInput((prefilledOrder.paidTransferencia || 0).toString());
-        }
-      }
-      if (prefilledOrder.address) {
-        setAddress(prefilledOrder.address);
-      }
-    }
-  }, [prefilledOrder]);
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
+      setProducts(list);
+    });
 
-  // 🛡️ LECTOR SEGURO DE STOCK Y VALIDACIÓN DE PROMOS (Única fuente de verdad)
-  const getSafeStock = (val) => {
-    if (val === undefined || val === null || val === '') return 0;
-    const num = parseInt(val, 10);
-    return isNaN(num) ? 0 : num;
-  };
+    const unsubPromos = onSnapshot(collection(db, 'promos'), (snapshot) => {
+      const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
+      setPromos(list);
+    });
+
+    return () => {
+      unsubProducts();
+      unsubPromos();
+    };
+  }, []);
 
   const isPromoOutOfStock = (promo) => {
     if (!promo.items || promo.items.length === 0) return false;
     return promo.items.some((comp) => {
       const pObj = products.find((p) => p.id === comp.productId);
-      return !pObj || getSafeStock(pObj.stock) < Number(comp.quantity || 1);
+      return !pObj || Number(pObj.stock ?? 0) < Number(comp.quantity || 1);
     });
   };
 
-  // CATEGORÍAS
+  const hasPromoInCart = useMemo(() => {
+    return cart.some((item) => 
+      item.type === 'promo' || 
+      item.isPromo || 
+      (item.name || '').toLowerCase().includes('combo') ||
+      (item.raw?.category || '').toLowerCase().includes('promo')
+    );
+  }, [cart]);
+
+  const processedCart = useMemo(() => {
+    return cart.map((item) => {
+      if (item.type === 'product' || !item.isPromo) {
+        const comboP = Number(item.raw?.comboPrice || item.comboPrice || 0);
+        const normalP = Number(item.raw?.sellPrice || item.raw?.price || item.sellPrice || item.price || 0);
+        const isDiscountApplied = hasPromoInCart && comboP > 0;
+        const effectivePrice = isDiscountApplied ? comboP : normalP;
+
+        return {
+          ...item,
+          price: effectivePrice,
+          normalPrice: normalP,
+          isDiscountApplied
+        };
+      }
+      return {
+        ...item,
+        price: Number(item.price || 0),
+        isDiscountApplied: false
+      };
+    });
+  }, [cart, hasPromoInCart]);
+
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.map((p) => p.category))).filter(Boolean);
     return ['Todas', '🔥 Promos & Combos', ...cats];
   }, [products]);
 
-  // FILTRADO CON BÚSQUEDA DENTRO DE COMBOS
   const filteredCatalog = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
 
     const promoMatches = (pr) => {
-      if (!pr.active) return false;
       if (!term) return true;
-
       const nameMatch = (pr.name || '').toLowerCase().includes(term);
       const descMatch = (pr.description || '').toLowerCase().includes(term);
       const itemsMatch = (pr.items || []).some((item) => {
@@ -116,7 +144,6 @@ export default function SalesTab({
           (pObj.brand || '').toLowerCase().includes(term)
         );
       });
-
       return nameMatch || descMatch || itemsMatch;
     };
 
@@ -147,57 +174,6 @@ export default function SalesTab({
     return [...matchingPromos, ...matchingProducts];
   }, [products, promos, searchTerm, selectedCategory]);
 
-  // DETECTAR SI HAY PROMO EN EL CARRITO
-  const hasPromoInCart = useMemo(() => {
-    return cart.some((item) => item.type === 'promo' || item.isPromo);
-  }, [cart]);
-
-  // APLICAR DESCUENTO P. COMBO DINÁMICAMENTE
-  const processedCart = useMemo(() => {
-    return cart.map((item) => {
-      if (item.type === 'product' || !item.isPromo) {
-        const comboP = Number(item.raw?.comboPrice || item.comboPrice || 0);
-        const normalP = Number(item.raw?.sellPrice || item.raw?.price || item.sellPrice || item.price || 0);
-
-        const isDiscountApplied = hasPromoInCart && comboP > 0;
-        const effectivePrice = isDiscountApplied ? comboP : normalP;
-
-        return {
-          ...item,
-          effectivePrice,
-          normalPrice: normalP,
-          isDiscountApplied
-        };
-      }
-      return {
-        ...item,
-        effectivePrice: Number(item.price || 0),
-        isDiscountApplied: false
-      };
-    });
-  }, [cart, hasPromoInCart]);
-
-  // CÁLCULOS
-  const shippingFee = parseFloat(shippingFeeInput) || 0;
-  const driverExtra = parseFloat(driverExtraInput) || 0;
-  const itemsTotal = processedCart.reduce((acc, i) => acc + i.effectivePrice * i.qty, 0);
-  const cartCostTotal = processedCart.reduce((acc, i) => acc + i.cost * i.qty, 0);
-  const cartTotal = itemsTotal + shippingFee;
-
-  const handleEfectivoChange = (val) => {
-    setPaidEfectivoInput(val);
-    const num = parseFloat(val) || 0;
-    const remaining = Math.max(0, cartTotal - num);
-    setPaidTransferenciaInput(remaining > 0 ? remaining.toString() : '0');
-  };
-
-  const handleTransferenciaChange = (val) => {
-    setPaidTransferenciaInput(val);
-    const num = parseFloat(val) || 0;
-    const remaining = Math.max(0, cartTotal - num);
-    setPaidEfectivoInput(remaining > 0 ? remaining.toString() : '0');
-  };
-
   const addToCart = (item) => {
     if (item.isPromo) {
       if (isPromoOutOfStock(item)) {
@@ -206,7 +182,7 @@ export default function SalesTab({
       }
     } else {
       const freshProduct = products.find((p) => p.id === item.id);
-      const currentStock = getSafeStock(freshProduct?.stock ?? item.stock ?? 0);
+      const currentStock = Number(freshProduct?.stock ?? item.stock ?? 0);
 
       const existingInCart = cart.find((i) => i.id === item.id && !i.isPromo);
       const currentQtyInCart = existingInCart ? existingInCart.qty : 0;
@@ -234,9 +210,6 @@ export default function SalesTab({
           }, 0)
         : (item.costPrice ?? item.cost ?? 0);
 
-      // 🚀 CAPTURAR CORRECTAMENTE LOS COMPONENTES (DESDE PROMO O RAW)
-      const rawItems = item.items || item.raw?.items || [];
-
       return [
         ...prev,
         {
@@ -247,30 +220,28 @@ export default function SalesTab({
           cost,
           qty: 1,
           type: item.isPromo ? 'promo' : 'product',
-          items: rawItems,
           raw: item
         }
       ];
     });
   };
 
-  // 🚀 FUNCIÓN DE AGREGADO RÁPIDO (UPSELL) PARA VASO
   const handleAddSuggested = (keywords) => {
     const foundProduct = products.find(p =>
-      keywords.some(kw => (p.name || '').toLowerCase().includes(kw))
+      keywords.some(kw => (p.name || '').toLowerCase().includes(kw)) && Number(p.stock ?? 0) > 0
     );
 
     if (foundProduct) {
       addToCart({ ...foundProduct, isPromo: false });
-      notify(`✨ ${foundProduct.name} sumado al pedido`);
     } else {
-      notify(`⚠️ No se encontró "${keywords[0]}" en el catálogo`);
+      alert('El producto sugerido se encuentra sin stock actualmente.');
     }
   };
 
-  // 🧊 LISTA DE HIELOS DISPONIBLES EN TU INVENTARIO
   const iceOptions = useMemo(() => {
-    return products.filter(p => (p.name || '').toLowerCase().includes('hielo') || (p.category || '').toLowerCase().includes('hielo'));
+    return products.filter(p => 
+      ((p.name || '').toLowerCase().includes('hielo') || (p.category || '').toLowerCase().includes('hielo'))
+    );
   }, [products]);
 
   const updateQty = (id, isPromo, delta) => {
@@ -298,205 +269,183 @@ export default function SalesTab({
     );
   };
 
-  const handleSubmitSale = () => {
+  const cartTotal = useMemo(() => {
+    return processedCart.reduce((acc, i) => acc + i.price * i.qty, 0);
+  }, [processedCart]);
+
+  const totalItemsCount = useMemo(() => {
+    return processedCart.reduce((acc, i) => acc + i.qty, 0);
+  }, [processedCart]);
+
+  const handleEfectivoChange = (val) => {
+    setPaidEfectivo(val);
+    const num = parseFloat(val) || 0;
+    const remaining = Math.max(0, cartTotal - num);
+    setPaidTransferencia(remaining > 0 ? remaining.toString() : '0');
+  };
+
+  const handleTransferenciaChange = (val) => {
+    setPaidTransferencia(val);
+    const num = parseFloat(val) || 0;
+    const remaining = Math.max(0, cartTotal - num);
+    setPaidEfectivo(remaining > 0 ? remaining.toString() : '0');
+  };
+
+  // 🚀 FUNCIÓN PARA OBTENER EL NÚMERO DE PEDIDO (EMPIEZA EN 65)
+  const getNextOrderNumber = async () => {
+    const counterRef = doc(db, 'counters', 'orderCounter');
+    const counterSnap = await getDoc(counterRef);
+
+    if (!counterSnap.exists()) {
+      await setDoc(counterRef, { current: 65 });
+      return 65;
+    } else {
+      await updateDoc(counterRef, { current: increment(1) });
+      const updatedSnap = await getDoc(counterRef);
+      return updatedSnap.data().current;
+    }
+  };
+
+  const handleSendOrder = async (e) => {
+    e.preventDefault();
     if (processedCart.length === 0) return;
 
-    if (paymentMethod === 'Fiado' && selectedClient === 'Cliente Casual') {
-      notify('⚠️ Para fiar, seleccioná un cliente específico de la lista');
+    if (!clientName.trim()) {
+      alert('Por favor ingresá tu nombre para saber a quién va el pedido.');
       return;
     }
 
-    let paidEfectivo = 0;
-    let paidTransferencia = 0;
+    setIsSending(true);
 
-    if (paymentMethod === 'Efectivo') {
-      paidEfectivo = cartTotal;
-    } else if (paymentMethod === 'Transferencia') {
-      paidTransferencia = cartTotal;
-    } else if (paymentMethod === 'Mixto') {
-      paidEfectivo = parseFloat(paidEfectivoInput) || 0;
-      paidTransferencia = parseFloat(paidTransferenciaInput) || 0;
-
-      if (Math.abs((paidEfectivo + paidTransferencia) - cartTotal) > 0.01) {
-        notify(`⚠️ La suma de Efectivo ($${paidEfectivo}) y Transferencia ($${paidTransferencia}) debe dar el total ($${cartTotal})`);
-        return;
-      }
-    }
-
-    const salePayload = {
-      saleCart: processedCart.map(item => ({ ...item, price: item.effectivePrice })),
-      selectedClient,
-      paymentMethod,
-      paidEfectivo,
-      paidTransferencia,
-      address,
-      shippingFee,
-      driverExtra,
-      cartTotal,
-      cartCostTotal,
-      clearCart: () => {
-        setCart([]);
-        setAddress('');
-        setShippingFeeInput('');
-        setDriverExtraInput('');
-        setPaidEfectivoInput('');
-        setPaidTransferenciaInput('');
-        setPaymentMethod('Efectivo');
-      }
-    };
-
-    onRegisterSale(salePayload);
-
-    setTicketModalData({
-      ticketId: `V-${Date.now().toString().slice(-4)}`,
-      date: new Date().toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      client: selectedClient,
-      paymentMethod,
-      paidEfectivo,
-      paidTransferencia,
-      address,
-      items: processedCart.map(item => ({ ...item, price: item.effectivePrice })),
-      shippingFee,
-      total: cartTotal
-    });
-  };
-
-  const handleDownloadImage = async () => {
-    if (!ticketRef.current) return;
-    setIsGeneratingImage(true);
     try {
-      const dataUrl = await toPng(ticketRef.current, { cacheBust: true, pixelRatio: 2 });
-      const link = document.createElement('a');
-      link.download = `Ticket-BengaDrinks-${ticketModalData.ticketId}.png`;
-      link.href = dataUrl;
-      link.click();
-      notify('📸 Imagen del ticket descargada');
+      // 1. Obtener número de pedido correlativo (desde 65)
+      const orderNumber = await getNextOrderNumber();
+
+      const efec = parseFloat(paidEfectivo) || 0;
+      const transf = parseFloat(paidTransferencia) || 0;
+
+      const newOrder = {
+        orderNumber: orderNumber, // Guardamos el número en Firebase para tu panel admin
+        clientName: clientName.trim(),
+        deliveryType: deliveryType,
+        address: deliveryType === 'envio' ? address.trim() : 'Retira en el local',
+        paymentMethod,
+        paidEfectivo: paymentMethod === 'Mixto' ? efec : (paymentMethod === 'Efectivo' ? cartTotal : 0),
+        paidTransferencia: paymentMethod === 'Mixto' ? transf : (paymentMethod === 'Transferencia' ? cartTotal : 0),
+        items: processedCart,
+        total: cartTotal,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // 2. Guardar en Firestore
+      await addDoc(collection(db, 'orders'), newOrder);
+
+      // 3. Armar mensaje corto a tu WhatsApp (solo aviso con número, sin resumen)
+      const waMessage = `¡Hola! Te hice un nuevo pedido N° ${orderNumber}`;
+
+      const phoneNumber = '5491140821173'; 
+      const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(waMessage)}`;
+
+      setOrderSentSuccess(true);
+      setShowCartModal(false);
+      setCart([]);
+      localStorage.removeItem('benga_cart');
+
+      window.open(waUrl, '_blank');
     } catch (err) {
-      notify('⚠️ No se pudo generar la imagen');
+      console.error(err);
+      alert('Hubo un error al enviar tu pedido. Revisa tu conexión.');
     } finally {
-      setIsGeneratingImage(false);
-    }
-  };
-
-  const handleShareImage = async () => {
-    if (!ticketRef.current) return;
-    setIsGeneratingImage(true);
-    try {
-      const dataUrl = await toPng(ticketRef.current, { cacheBust: true, pixelRatio: 2 });
-      const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], `Ticket-BengaDrinks-${ticketModalData.ticketId}.png`, {
-        type: 'image/png'
-      });
-
-      const clientName = ticketModalData.client;
-      const customText = clientName && clientName !== 'Cliente Casual'
-        ? `¡Muchas gracias, ${clientName}! 🙌🍹 Acá te dejo el ticket de tu pedido ✨`
-        : `¡Muchas gracias! 🙌🍹 Acá te dejo tu ticket ✨`;
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'Ticket de Compra - Benga Drinks',
-          text: customText
-        });
-      } else {
-        handleDownloadImage();
-      }
-    } catch (err) {
-      handleDownloadImage();
-    } finally {
-      setIsGeneratingImage(false);
+      setIsSending(false);
     }
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
-      {/* LADO IZQUIERDO: CATÁLOGO DE TARJETAS VISUALES */}
-      <div className="lg:col-span-7 space-y-4">
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar fernet, vodka, hielo, combos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 transition"
-            />
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-32 antialiased relative">
+      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-4 shadow-xl">
+        <div className="max-w-md mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="font-black text-xl text-fuchsia-400 tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-5 h-5" /> BENGA DRINKS
+            </h1>
+            <p className="text-[11px] text-slate-400 font-medium">Hacé tu pedido online rápido y fácil 🍹</p>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
-                  selectedCategory === cat
-                    ? 'bg-fuchsia-500 text-slate-950 border-fuchsia-400 shadow-md shadow-fuchsia-500/20'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setShowCartModal(true)}
+            className="relative bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold p-3 rounded-2xl transition shadow-lg shadow-fuchsia-500/20"
+          >
+            <ShoppingBag className="w-5 h-5 stroke-[2.5]" />
+            {totalItemsCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-white text-fuchsia-600 font-mono font-bold text-xs w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-950">
+                {totalItemsCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto p-4 space-y-4">
+        <div className="relative">
+          <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Buscar fernet, vodka, combos, hielo..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 transition shadow-inner"
+          />
         </div>
 
-        {/* GRILLA VISUAL DE PRODUCTOS/PROMOS CON FOTO */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[580px] overflow-y-auto pr-1">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
+                selectedCategory === cat
+                  ? 'bg-fuchsia-500 text-slate-950 border-fuchsia-400 shadow-md shadow-fuchsia-500/20'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {hasPromoInCart && (
+          <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-2xl flex items-center gap-2 text-xs text-amber-300">
+            <Sparkles className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>¡Llevás una promo! Se aplicó precio con descuento en tu hielo o agregados.</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
           {filteredCatalog.map((item) => {
-            const comboP = Number(item.comboPrice || item.raw?.comboPrice || 0);
-            const isComboEligible = !item.isPromo && hasPromoInCart && comboP > 0;
+            const outOfStock = item.isPromo ? isPromoOutOfStock(item) : Number(item.stock ?? 0) <= 0;
+            const hasComboDiscount = !item.isPromo && hasPromoInCart && item.comboPrice > 0;
             const displayPrice = item.isPromo
               ? item.price
-              : (isComboEligible ? comboP : (item.sellPrice || item.price));
-
-            const outOfStock = item.isPromo 
-              ? isPromoOutOfStock(item) 
-              : getSafeStock(item.stock) <= 0;
+              : (hasComboDiscount ? item.comboPrice : (item.sellPrice || item.price));
 
             return (
               <div
                 key={`${item.isPromo ? 'pr' : 'prod'}-${item.id}`}
-                onClick={() => {
-                  if (outOfStock) return;
-                  addToCart(item);
-                }}
-                className={`border rounded-2xl overflow-hidden transition flex flex-col justify-between group shadow-lg relative ${
-                  outOfStock
-                    ? 'bg-slate-950/40 border-slate-800/50 opacity-60 cursor-not-allowed grayscale'
+                className={`border rounded-3xl overflow-hidden transition flex flex-col justify-between shadow-xl ${
+                  outOfStock 
+                    ? 'opacity-60 bg-slate-950 border-slate-800 grayscale' 
                     : item.isPromo
-                    ? 'bg-fuchsia-950/20 border-fuchsia-500/40 hover:border-fuchsia-400 cursor-pointer hover:scale-[1.02]'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-fuchsia-500/50 cursor-pointer hover:scale-[1.02]'
+                      ? 'bg-fuchsia-950/20 border-fuchsia-500/40'
+                      : 'bg-slate-900/80 border-slate-800'
                 }`}
               >
-                <div className="h-28 bg-slate-950 relative overflow-hidden flex items-center justify-center border-b border-slate-800/80">
-                  {outOfStock && (
-                    <div className="absolute inset-0 z-20 bg-slate-950/70 backdrop-blur-[2px] flex items-center justify-center">
-                      <span className="bg-slate-900/90 border border-slate-700 text-slate-300 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-xl">
-                        SIN STOCK
-                      </span>
-                    </div>
-                  )}
-
+                <div className="h-32 bg-slate-950 relative overflow-hidden flex items-center justify-center border-b border-slate-800/80">
                   {item.imageUrl ? (
                     <img
-                      src={getOptimizedImageUrl(item.imageUrl)}
+                      src={item.imageUrl}
                       alt={item.name}
-                      loading="lazy"
-                      decoding="async"
-                      crossOrigin="anonymous"
-                      onError={(e) => {
-                        e.target.onerror = null; 
-                        e.target.src = item.imageUrl;
-                      }}
-                      className="w-full h-full object-cover group-hover:scale-110 transition duration-300"
+                      className="w-full h-full object-cover"
                     />
                   ) : (
                     <div className="text-slate-700 flex flex-col items-center gap-1">
@@ -504,19 +453,25 @@ export default function SalesTab({
                       <span className="text-[9px] uppercase font-bold text-slate-600">Sin Foto</span>
                     </div>
                   )}
-                  <span className="absolute top-1.5 left-1.5 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded-md text-[9px] font-bold uppercase text-fuchsia-400 border border-slate-800 z-10">
+                  <span className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase text-fuchsia-400 border border-slate-800">
                     {item.isPromo ? '🔥 Promo' : item.brand}
                   </span>
+
+                  {outOfStock && (
+                    <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px] flex items-center justify-center">
+                      <span className="bg-red-500/20 border border-red-500/40 text-red-400 font-bold text-[10px] px-2.5 py-1 rounded-xl uppercase tracking-wider">
+                        Sin Stock
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="p-2.5 space-y-1 flex-1 flex flex-col justify-between">
+                <div className="p-3 space-y-1.5 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="font-bold text-xs text-slate-100 group-hover:text-fuchsia-400 line-clamp-1">
-                      {item.name}
-                    </h3>
+                    <h3 className="font-bold text-xs text-white line-clamp-1">{item.name}</h3>
                     {item.description && (
-                      <p className="text-[10px] text-slate-400 line-clamp-1">
-                        {item.description}
+                      <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                        ✨ {item.description}
                       </p>
                     )}
                   </div>
@@ -524,15 +479,15 @@ export default function SalesTab({
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       {outOfStock ? (
-                        <span className="font-mono text-xs font-bold text-slate-500 block">
+                        <span className="font-mono text-xs font-bold text-red-400 block">
                           Sin stock
                         </span>
                       ) : (
                         <>
-                          <span className="font-mono text-xs font-black text-emerald-400 block">
+                          <span className="font-mono text-sm font-black text-emerald-400 block">
                             {formatCurrency(displayPrice)}
                           </span>
-                          {isComboEligible && (
+                          {hasComboDiscount && (
                             <span className="font-mono text-[9px] text-slate-500 line-through">
                               {formatCurrency(item.sellPrice || item.price)}
                             </span>
@@ -540,13 +495,18 @@ export default function SalesTab({
                         </>
                       )}
                     </div>
-                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition shadow ${
-                      outOfStock
-                        ? 'bg-slate-800/40 text-slate-600'
-                        : 'bg-slate-800 group-hover:bg-fuchsia-500 group-hover:text-slate-950 text-slate-300'
-                    }`}>
-                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                    </div>
+
+                    <button
+                      disabled={outOfStock}
+                      onClick={() => addToCart(item)}
+                      className={`p-2.5 rounded-xl transition ${
+                        outOfStock 
+                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed' 
+                          : 'bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-300 border border-fuchsia-500/40'
+                      }`}
+                    >
+                      <Plus className="w-4 h-4 stroke-[2.5]" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -554,75 +514,49 @@ export default function SalesTab({
           })}
 
           {filteredCatalog.length === 0 && (
-            <div className="col-span-full bg-slate-900/50 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
-              No se encontraron bebidas ni combos que coincidan con "{searchTerm}".
+            <div className="col-span-full bg-slate-900/50 border border-slate-800 rounded-3xl p-8 text-center text-slate-500 text-xs">
+              No encontramos bebidas ni combos para "{searchTerm}".
             </div>
           )}
         </div>
-      </div>
+      </main>
 
-      {/* LADO DERECHO: VENTA Y PAGO */}
-      <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl relative">
-        <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-          <h2 className="font-bold text-base text-white flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-fuchsia-400" /> Venta Actual
-          </h2>
-          {cart.length > 0 && (
-            <button onClick={() => setCart([])} className="text-xs text-red-400 hover:underline">
-              Vaciar
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-          {processedCart.length === 0 ? (
+      {processedCart.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-8">
               Seleccioná productos o combos de la izquierda para sumar a la venta.
             </p>
           ) : (
-            processedCart.map((item, index) => {
-              // 🚀 CRUZAR IDs CON NOMBRES REALES DE PRODUCTOS
-              const comboComponents = (item.items || []).map((sub) => {
+            processedCart.map((item) => {
+              // 🚀 BUSGAMOS LOS NOMBRES REALES DE LOS PRODUCTOS DEL COMBO USANDO SU ID
+              const comboComponents = (item.items || item.raw?.items || []).map((sub) => {
                 const foundProd = products.find((p) => p.id === sub.productId);
                 return {
                   qty: sub.quantity || sub.qty || 1,
-                  name: foundProd ? foundProd.name : (sub.name || sub.productId)
+                  name: foundProd ? foundProd.name : (sub.name || 'Producto')
                 };
               });
 
-              const isExpanded = !!expandedCombos[index];
-
               return (
                 <div
-                  key={`${item.id}-${item.type}-${index}`}
+                  key={`${item.id}-${item.type}`}
                   className="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 space-y-2 text-xs"
                 >
                   <div className="flex items-center justify-between">
                     <div className="truncate flex-1 pr-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-semibold text-slate-100">{item.name}</span>
-                        
                         {comboComponents.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedCombos((prev) => ({ ...prev, [index]: !prev[index] }))
-                            }
-                            className="text-[10px] bg-fuchsia-500/20 text-fuchsia-300 font-bold px-2 py-0.5 rounded-lg border border-fuchsia-500/40 flex items-center gap-1 hover:bg-fuchsia-500/30 transition cursor-pointer"
-                          >
-                            <span>Ver combo</span>
-                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                          </button>
+                          <span className="text-[9px] bg-fuchsia-500/20 text-fuchsia-400 font-bold px-1.5 py-0.5 rounded border border-fuchsia-500/30">
+                            Combo
+                          </span>
                         )}
-
                         {item.isDiscountApplied && (
                           <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
                             Dto. Promo
                           </span>
                         )}
                       </div>
-
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-2 pt-0.5">
                         <span className="font-mono text-emerald-400 text-[11px] font-bold">
                           {formatCurrency(item.effectivePrice * item.qty)}
                         </span>
@@ -651,12 +585,12 @@ export default function SalesTab({
                     </div>
                   </div>
 
-                  {/* 🚀 CAJA DESPLEGABLE CON LOS NOMBRES REALES DE LO QUE CONTIENE */}
-                  {comboComponents.length > 0 && isExpanded && (
-                    <div className="bg-slate-900/90 border border-fuchsia-500/30 rounded-xl p-2.5 space-y-1 animate-fadeIn">
+                  {/* 🚀 DESPLIEGUE SEGURO HACIA ABAJO (Muestra los nombres reales y nunca se corta) */}
+                  {comboComponents.length > 0 && (
+                    <div className="bg-slate-900/90 border border-fuchsia-500/30 rounded-xl p-2 space-y-1">
                       <p className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Contiene:</p>
-                      {comboComponents.map((subItem, subIdx) => (
-                        <div key={subIdx} className="text-[11px] text-slate-200 flex items-center gap-1.5 font-mono">
+                      {comboComponents.map((subItem, idx) => (
+                        <div key={idx} className="text-[11px] text-slate-300 flex items-center gap-1.5 font-mono">
                           <span className="text-fuchsia-400">•</span> {subItem.qty}x {subItem.name}
                         </div>
                       ))}
@@ -666,316 +600,314 @@ export default function SalesTab({
               );
             })
           )}
-        </div>
 
-        <div className="space-y-3 pt-3 border-t border-slate-800 text-xs">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-fuchsia-400" /> Cliente:
-              </label>
-              <select
-                value={selectedClient}
-                onChange={(e) => setSelectedClient(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white font-medium focus:outline-none focus:border-fuchsia-500"
-              >
-                <option value="Cliente Casual">Cliente Casual</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Medio de Pago:
-              </label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => {
-                  const mode = e.target.value;
-                  setPaymentMethod(mode);
-                  if (mode === 'Mixto') {
-                    const half = Math.round(cartTotal / 2);
-                    setPaidEfectivoInput(half.toString());
-                    setPaidTransferenciaInput((cartTotal - half).toString());
-                  }
-                }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white font-medium focus:outline-none focus:border-fuchsia-500"
-              >
-                <option value="Efectivo">💵 Efectivo</option>
-                <option value="Transferencia">💳 Transferencia / MP</option>
-                <option value="Mixto">🔀 Pago Mixto (Efectivo + MP)</option>
-                <option value="Fiado">📝 Fiado (Deuda)</option>
-              </select>
-            </div>
-          </div>
-
-          {paymentMethod === 'Mixto' && (
-            <div className="bg-slate-950/90 p-3 rounded-2xl border border-fuchsia-500/40 space-y-2 animate-fadeIn">
-              <span className="text-[11px] font-bold text-fuchsia-400 block uppercase">
-                Dividir Pago Mixto (Total: {formatCurrency(cartTotal)})
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Monto en Efectivo ($):</label>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="0"
-                    value={paidEfectivoInput}
-                    onChange={(e) => handleEfectivoChange(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs focus:outline-none focus:border-fuchsia-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Monto MP / Transf ($):</label>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="0"
-                    value={paidTransferenciaInput}
-                    onChange={(e) => handleTransferenciaChange(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs focus:outline-none focus:border-fuchsia-500"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-slate-400 block mb-1 font-medium flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Dirección de Envío (Opcional):
-            </label>
-            <input
-              type="text"
-              placeholder="Ej: Calle San Martín 1234, Dpto 2B"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white focus:outline-none focus:border-fuchsia-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Costo Envío ($):</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={shippingFeeInput}
-                onChange={(e) => setShippingFeeInput(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Extra Delivery ($):</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={driverExtraInput}
-                onChange={(e) => setDriverExtraInput(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white font-mono"
-              />
-            </div>
-          </div>
-
-          {/* SUGERIDOS RÁPIDOS (UPSELL) */}
-          <div className="pt-3 border-t border-slate-800 space-y-2 relative">
-            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Sugeridos Rápidos (Upsell)
-            </span>
-            <div className="grid grid-cols-2 gap-2 relative">
-              <div className="relative">
-                <button
-                  onClick={() => setShowIceSelector(!showIceSelector)}
-                  className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl py-2 flex flex-col items-center justify-center gap-1 transition"
-                  title="Seleccionar Hielo"
-                >
-                  <span className="text-base">🧊</span>
-                  <span className="text-[10px] font-bold">Hielo (Elegir)</span>
-                </button>
-
-                {showIceSelector && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-slate-950 border border-sky-500/50 rounded-2xl p-2.5 shadow-2xl z-50 space-y-2 backdrop-blur-md animate-fadeIn">
-                    <div className="flex justify-between items-center px-1 pb-1 border-b border-slate-800">
-                      <span className="text-[10px] font-bold text-sky-400 uppercase">Elegí el tipo de Hielo:</span>
-                      <button onClick={() => setShowIceSelector(false)} className="text-slate-400 hover:text-white">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {iceOptions.length === 0 ? (
-                      <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos cargados en el inventario.</p>
-                    ) : (
-                      iceOptions.map((ice) => {
-                        const comboP = Number(ice.comboPrice || 0);
-                        const normalP = Number(ice.sellPrice || ice.price || 0);
-                        const isComboEligible = hasPromoInCart && comboP > 0;
-                        const finalIcePrice = isComboEligible ? comboP : normalP;
-
-                        return (
-                          <button
-                            key={ice.id}
-                            onClick={() => {
-                              addToCart({ ...ice, isPromo: false });
-                              setShowIceSelector(false);
-                              notify(`🧊 ${ice.name} sumado al pedido`);
-                            }}
-                            className="w-full text-left bg-slate-900 hover:bg-sky-500/20 border border-slate-800 hover:border-sky-500/40 p-2 rounded-xl transition flex justify-between items-center text-xs"
-                          >
-                            <span className="font-medium text-slate-200 truncate pr-1">{ice.name}</span>
-                            <div className="text-right whitespace-nowrap">
-                              <span className="font-mono text-emerald-400 font-bold block">
-                                {formatCurrency(finalIcePrice)}
-                              </span>
-                              {isComboEligible && (
-                                <span className="font-mono text-[9px] text-slate-500 line-through block">
-                                  {formatCurrency(normalP)}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={() => handleAddSuggested(['vaso'])}
-                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex flex-col items-center justify-center gap-1 transition"
-                title="Agregar Vaso 1L"
-              >
-                <span className="text-base">🥤</span>
-                <span className="text-[10px] font-bold">Vaso 1L</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="pt-2 flex items-center justify-between border-t border-slate-800 mt-3">
-            <span className="text-xs text-slate-400 uppercase font-bold">Total a Cobrar:</span>
-            <span className="font-mono text-2xl font-bold text-fuchsia-400">
-              {formatCurrency(cartTotal)}
-            </span>
-          </div>
-
-          <button
-            disabled={processedCart.length === 0}
-            onClick={handleSubmitSale}
-            className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-bold py-3.5 rounded-2xl transition shadow-lg shadow-fuchsia-500/20 flex items-center justify-center gap-2"
-          >
-            <Sparkles className="w-5 h-5" /> Registrar y Generar Ticket
-          </button>
-        </div>
-      </div>
-
-      {/* MODAL TICKET FOTO */}
-      {ticketModalData && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-fuchsia-400" /> Ticket Digital Generado
+      {showCartModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-white flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-fuchsia-400" /> Resumen de Tu Pedido
               </h3>
-              <button onClick={() => setTicketModalData(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowCartModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="overflow-hidden rounded-2xl shadow-2xl">
-              <div
-                ref={ticketRef}
-                className="bg-slate-950 text-slate-100 p-5 font-mono text-xs space-y-4 border border-fuchsia-500/30"
-              >
-                <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-800">
-                  <div className="font-black text-base tracking-wider text-fuchsia-400">BENGA DRINKS</div>
-                  <div className="text-[10px] text-slate-400 uppercase">Venta de Bebidas</div>
-                  <div className="text-[9px] text-slate-500 pt-1">Ticket #{ticketModalData.ticketId} • {ticketModalData.date}</div>
-                </div>
-
-                <div className="space-y-1 text-[11px] pb-3 border-b border-dashed border-slate-800">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Cliente:</span>
-                    <strong className="text-white">{ticketModalData.client}</strong>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-slate-400">Pago:</span>
-                    <strong className="text-emerald-400 text-right">
-                      {ticketModalData.paymentMethod === 'Mixto' ? (
-                        <>
-                          <span>Mixto</span>
-                          <span className="block text-[9px] text-slate-300 font-mono">
-                            Efec: {formatCurrency(ticketModalData.paidEfectivo)} | MP: {formatCurrency(ticketModalData.paidTransferencia)}
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+              {processedCart.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
+              ) : (
+                processedCart.map((item) => (
+                  <div
+                    key={`${item.id}-${item.type}`}
+                    className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs"
+                  >
+                    <div className="truncate flex-1 pr-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-white truncate">{item.name}</span>
+                        {item.isDiscountApplied && (
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                            Combo
                           </span>
-                        </>
-                      ) : (
-                        ticketModalData.paymentMethod
-                      )}
-                    </strong>
-                  </div>
-                  {ticketModalData.address && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Envío a:</span>
-                      <strong className="text-slate-200 truncate max-w-[150px]">{ticketModalData.address}</strong>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 pb-3 border-b border-dashed border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Detalle:</span>
-                  {ticketModalData.items.map((item, idx) => (
-                    <div key={idx} className="space-y-0.5">
-                      <div className="flex justify-between">
-                        <span>{item.qty}x {item.name}</span>
-                        <span className="font-bold">{formatCurrency(item.price * item.qty)}</span>
+                        )}
                       </div>
-                      {item.raw?.description && (
-                        <div className="text-[9px] text-fuchsia-300 pl-2">
-                          + {item.raw.description}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {formatCurrency(item.price * item.qty)}
+                        </span>
+                        {item.isDiscountApplied && (
+                          <span className="font-mono text-[10px] text-slate-500 line-through">
+                            {formatCurrency(item.normalPrice * item.qty)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ))}
 
-                  {ticketModalData.shippingFee > 0 && (
-                    <div className="flex justify-between text-slate-400 pt-1">
-                      <span>Costo de Envío</span>
-                      <span>{formatCurrency(ticketModalData.shippingFee)}</span>
+                    <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', -1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-bold text-white px-1">{item.qty}</span>
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', 1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800 space-y-2 relative">
+              <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
+              </span>
+              <div className="grid grid-cols-2 gap-2 relative">
+                
+                <div className="relative">
+                  <button
+                    onClick={() => setShowIceSelector(!showIceSelector)}
+                    className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                  >
+                    <span>🧊</span> Hielo (Elegir)
+                  </button>
+
+                  {showIceSelector && (
+                    <div className="absolute bottom-full left-0 mb-2 w-full bg-slate-950 border border-sky-500/50 rounded-2xl p-2 shadow-2xl z-50 space-y-1.5 backdrop-blur-md animate-fadeIn">
+                      <div className="flex justify-between items-center px-1 pb-1 border-b border-slate-800">
+                        <span className="text-[10px] font-bold text-sky-400 uppercase">Seleccioná Hielo:</span>
+                        <button onClick={() => setShowIceSelector(false)} className="text-slate-400 hover:text-white">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {iceOptions.length === 0 ? (
+                        <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos disponibles.</p>
+                      ) : (
+                        iceOptions.map((ice) => {
+                          const iceStock = Number(ice.stock ?? 0);
+                          const isIceOut = iceStock <= 0;
+                          const comboP = Number(ice.comboPrice || 0);
+                          const normalP = Number(ice.sellPrice || ice.price || 0);
+                          const isComboEligible = hasPromoInCart && comboP > 0;
+                          const finalIcePrice = isComboEligible ? comboP : normalP;
+
+                          return (
+                            <button
+                              key={ice.id}
+                              disabled={isIceOut}
+                              onClick={() => {
+                                if (!isIceOut) {
+                                  addToCart({ ...ice, isPromo: false });
+                                  setShowIceSelector(false);
+                                }
+                              }}
+                              className={`w-full text-left p-2 rounded-xl transition flex justify-between items-center text-xs border ${
+                                isIceOut 
+                                  ? 'bg-slate-950 opacity-50 border-slate-900 cursor-not-allowed' 
+                                  : 'bg-slate-900 hover:bg-sky-500/20 border-slate-800 hover:border-sky-500/40'
+                              }`}
+                            >
+                              <span className={`font-medium truncate pr-1 ${isIceOut ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                                {ice.name}
+                              </span>
+                              <div className="text-right whitespace-nowrap">
+                                {isIceOut ? (
+                                  <span className="text-[10px] text-red-400 font-bold block">Sin stock</span>
+                                ) : (
+                                  <>
+                                    <span className="font-mono text-emerald-400 font-bold block">
+                                      {formatCurrency(finalIcePrice)}
+                                    </span>
+                                    {isComboEligible && (
+                                      <span className="font-mono text-[9px] text-slate-500 line-through block">
+                                        {formatCurrency(normalP)}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   )}
                 </div>
 
-                <div className="pt-1 flex justify-between items-center text-sm font-bold">
-                  <span className="text-slate-300">TOTAL:</span>
-                  <span className="text-fuchsia-400 text-base">{formatCurrency(ticketModalData.total)}</span>
-                </div>
-
-                <div className="text-center text-[9px] text-slate-500 pt-2 border-t border-dashed border-slate-800">
-                  ¡Muchas gracias por tu preferencia! ✨
-                </div>
+                <button
+                  onClick={() => handleAddSuggested(['vaso'])}
+                  className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                >
+                  <span>🥤</span> Vaso 1L
+                </button>
               </div>
             </div>
 
-            <div className="space-y-2 pt-1">
-              <button
-                disabled={isGeneratingImage}
-                onClick={handleShareImage}
-                className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-800 text-slate-950 font-bold py-3 rounded-2xl transition shadow-lg shadow-fuchsia-500/20 flex items-center justify-center gap-2 text-xs"
-              >
-                <Share2 className="w-4 h-4" /> Compartir Foto / Enviar
-              </button>
+            <form onSubmit={handleSendOrder} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-fuchsia-400" /> Tu Nombre / Apodo:
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Ej: Juan Pérez"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> ¿Cómo vas a abonar?:
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const mode = e.target.value;
+                    setPaymentMethod(mode);
+                    if (mode === 'Mixto') {
+                      const half = Math.round(cartTotal / 2);
+                      setPaidEfectivo(half.toString());
+                      setPaidTransferencia((cartTotal - half).toString());
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-fuchsia-500"
+                >
+                  <option value="Efectivo">💵 Efectivo al entregar</option>
+                  <option value="Transferencia">📲 Transferencia / Mercado Pago</option>
+                  <option value="Mixto">🔀 Pago Mixto (Parte Efec + Parte Transf)</option>
+                </select>
+              </div>
+
+              {/* 🚀 RETIRO O ENVÍO CON AVISO PROFESIONAL */}
+              <div className="space-y-2 pt-1">
+                <label className="text-slate-300 block font-bold flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Tipo de Entrega:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('retiro')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'retiro'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'retiro' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'retiro' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Retiro en Local
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('envio')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'envio'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'envio' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'envio' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Envío a Domicilio
+                  </button>
+                </div>
+
+                {deliveryType === 'envio' && (
+                  <div className="space-y-2 pt-1 animate-fadeIn">
+                    <input
+                      required={deliveryType === 'envio'}
+                      type="text"
+                      placeholder="Ingresá tu dirección (Calle y número, depto)"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full bg-slate-950 border border-fuchsia-500/40 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    />
+                    <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 p-2.5 rounded-xl text-[11px] text-fuchsia-200 leading-relaxed">
+                      🛵 <strong>Aviso de Envío:</strong> El costo de envío se calcula según la distancia (a partir de $1.500 en adelante según las cuadras). Se te confirmará al coordinar la entrega.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {paymentMethod === 'Mixto' && (
+                <div className="bg-slate-950 p-3 rounded-2xl border border-fuchsia-500/40 space-y-2">
+                  <span className="text-[11px] font-bold text-fuchsia-400 block uppercase">
+                    Dividir Pago Mixto (Total: {formatCurrency(cartTotal)})
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Monto Efectivo ($):</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={paidEfectivo}
+                        onChange={(e) => handleEfectivoChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Monto MP / Transf ($):</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={paidTransferencia}
+                        onChange={(e) => handleTransferenciaChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-between items-center text-sm">
+                <span className="font-bold text-slate-300 uppercase">TOTAL A PAGAR:</span>
+                <span className="font-mono text-2xl font-black text-fuchsia-400">{formatCurrency(cartTotal)}</span>
+              </div>
 
               <button
-                disabled={isGeneratingImage}
-                onClick={handleDownloadImage}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold py-3 rounded-2xl transition flex items-center justify-center gap-2 text-xs"
+                type="submit"
+                disabled={isSending || processedCart.length === 0}
+                className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-800 text-slate-950 font-bold py-3.5 rounded-2xl transition shadow-lg shadow-fuchsia-500/20 flex items-center justify-center gap-2 text-sm mt-2"
               >
-                <Download className="w-4 h-4" /> Descargar Imagen PNG
+                <Send className="w-5 h-5" /> {isSending ? 'Enviando...' : 'Enviar Pedido por WhatsApp'}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {orderSentSuccess && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/40">
+              <CheckCircle2 className="w-10 h-10" />
             </div>
+
+            <div>
+              <h3 className="font-bold text-lg text-white">¡Pedido Enviado! ✨</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Tu solicitud ya llegó a la caja de Benga Drinks. Te contactaremos enseguida para confirmar la entrega.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setOrderSentSuccess(false)}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 rounded-2xl text-xs transition"
+            >
+              Volver al Catálogo
+            </button>
           </div>
         </div>
       )}
