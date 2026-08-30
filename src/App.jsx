@@ -300,6 +300,7 @@ export default function App() {
   };
 
   // 🚀 CAMBIADO A 19 PARA QUE EL SIGUIENTE SEA EXACTAMENTE EL NÚMERO 20
+ // 🚀 NÚMERO DE PEDIDO FORZADO EN FIREBASE PARA QUE ARRANQUE EN 20
   const getNextOrderNumber = async () => {
     const counterRef = doc(db, 'counters', 'orderCounter');
     const counterSnap = await getDoc(counterRef);
@@ -308,9 +309,13 @@ export default function App() {
       await setDoc(counterRef, { current: 19 });
       return 20;
     } else {
-      await updateDoc(counterRef, { current: increment(1) });
-      const updatedSnap = await getDoc(counterRef);
-      return updatedSnap.data().current;
+      const currentVal = counterSnap.data().current;
+      // Si el número actual es mayor a 19 (ej: 77), lo blanqueamos a 19 para que el próximo sea 20
+      const targetVal = currentVal >= 20 ? 19 : currentVal;
+      
+      const nextVal = targetVal + 1;
+      await updateDoc(counterRef, { current: nextVal });
+      return nextVal;
     }
   };
 
