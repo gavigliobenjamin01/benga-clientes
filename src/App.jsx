@@ -521,22 +521,85 @@ export default function App() {
         </div>
       </main>
 
-      {processedCart.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 z-30 max-w-md mx-auto">
-          <button
-            onClick={() => setShowCartModal(true)}
-            className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-slate-950 font-bold p-4 rounded-2xl shadow-2xl shadow-fuchsia-500/40 flex items-center justify-between transition border border-fuchsia-300/40"
-          >
-            <div className="flex items-center gap-2">
-              <span className="bg-slate-950 text-fuchsia-400 font-mono text-xs px-2.5 py-1 rounded-xl">
-                {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'}
-              </span>
-              <span className="text-sm font-bold">Ver Mi Pedido</span>
-            </div>
-            <span className="font-mono text-lg font-black">{formatCurrency(cartTotal)}</span>
-          </button>
-        </div>
-      )}
+      {processedCart.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-8">
+              Seleccioná productos o combos de la izquierda para sumar a la venta.
+            </p>
+          ) : (
+            processedCart.map((item) => {
+              // 🚀 BUSGAMOS LOS NOMBRES REALES DE LOS PRODUCTOS DEL COMBO USANDO SU ID
+              const comboComponents = (item.items || item.raw?.items || []).map((sub) => {
+                const foundProd = products.find((p) => p.id === sub.productId);
+                return {
+                  qty: sub.quantity || sub.qty || 1,
+                  name: foundProd ? foundProd.name : (sub.name || 'Producto')
+                };
+              });
+
+              return (
+                <div
+                  key={`${item.id}-${item.type}`}
+                  className="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="truncate flex-1 pr-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-slate-100">{item.name}</span>
+                        {comboComponents.length > 0 && (
+                          <span className="text-[9px] bg-fuchsia-500/20 text-fuchsia-400 font-bold px-1.5 py-0.5 rounded border border-fuchsia-500/30">
+                            Combo
+                          </span>
+                        )}
+                        {item.isDiscountApplied && (
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                            Dto. Promo
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className="font-mono text-emerald-400 text-[11px] font-bold">
+                          {formatCurrency(item.effectivePrice * item.qty)}
+                        </span>
+                        {item.isDiscountApplied && (
+                          <span className="font-mono text-[10px] text-slate-500 line-through">
+                            {formatCurrency(item.normalPrice * item.qty)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', -1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-bold text-white px-1">{item.qty}</span>
+                      <button
+                        onClick={() => updateQty(item.id, item.type === 'promo', 1)}
+                        className="text-slate-400 hover:text-white px-1 font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 🚀 DESPLIEGUE SEGURO HACIA ABAJO (Muestra los nombres reales y nunca se corta) */}
+                  {comboComponents.length > 0 && (
+                    <div className="bg-slate-900/90 border border-fuchsia-500/30 rounded-xl p-2 space-y-1">
+                      <p className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Contiene:</p>
+                      {comboComponents.map((subItem, idx) => (
+                        <div key={idx} className="text-[11px] text-slate-300 flex items-center gap-1.5 font-mono">
+                          <span className="text-fuchsia-400">•</span> {subItem.qty}x {subItem.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
 
       {showCartModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
