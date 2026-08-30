@@ -14,7 +14,9 @@ import {
   X,
   Tag,
   Image as ImageIcon,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 const formatCurrency = (val) => {
@@ -38,6 +40,9 @@ export default function App() {
       return [];
     }
   });
+
+  // 🚀 ESTADO PARA CONTROLAR QUÉ COMBOS TIENEN EL DESPLEGABLE ABIERTO
+  const [expandedCombos, setExpandedCombos] = useState({});
 
   useEffect(() => {
     try {
@@ -210,6 +215,8 @@ export default function App() {
           }, 0)
         : (item.costPrice ?? item.cost ?? 0);
 
+      const rawItems = item.items || item.raw?.items || [];
+
       return [
         ...prev,
         {
@@ -220,6 +227,7 @@ export default function App() {
           cost,
           qty: 1,
           type: item.isPromo ? 'promo' : 'product',
+          items: rawItems,
           raw: item
         }
       ];
@@ -291,14 +299,14 @@ export default function App() {
     setPaidEfectivo(remaining > 0 ? remaining.toString() : '0');
   };
 
-  // 🚀 FUNCIÓN PARA OBTENER EL NÚMERO DE PEDIDO (EMPIEZA EN 65)
+  // 🚀 CAMBIADO A 19 PARA QUE EL SIGUIENTE SEA EXACTAMENTE EL NÚMERO 20
   const getNextOrderNumber = async () => {
     const counterRef = doc(db, 'counters', 'orderCounter');
     const counterSnap = await getDoc(counterRef);
 
     if (!counterSnap.exists()) {
-      await setDoc(counterRef, { current: 65 });
-      return 65;
+      await setDoc(counterRef, { current: 19 });
+      return 20;
     } else {
       await updateDoc(counterRef, { current: increment(1) });
       const updatedSnap = await getDoc(counterRef);
@@ -318,14 +326,13 @@ export default function App() {
     setIsSending(true);
 
     try {
-      // 1. Obtener número de pedido correlativo (desde 65)
       const orderNumber = await getNextOrderNumber();
 
       const efec = parseFloat(paidEfectivo) || 0;
       const transf = parseFloat(paidTransferencia) || 0;
 
       const newOrder = {
-        orderNumber: orderNumber, // Guardamos el número en Firebase para tu panel admin
+        orderNumber: orderNumber,
         clientName: clientName.trim(),
         deliveryType: deliveryType,
         address: deliveryType === 'envio' ? address.trim() : 'Retira en el local',
@@ -338,10 +345,8 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
 
-      // 2. Guardar en Firestore
       await addDoc(collection(db, 'orders'), newOrder);
 
-      // 3. Armar mensaje corto a tu WhatsApp (solo aviso con número, sin resumen)
       const waMessage = `¡Hola! Te hice un nuevo pedido N° ${orderNumber}`;
 
       const phoneNumber = '5491140821173'; 
@@ -519,15 +524,16 @@ export default function App() {
             </div>
           )}
         </div>
-      </main>
 
-      {processedCart.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-8">
-              Seleccioná productos o combos de la izquierda para sumar a la venta.
+        {/* 🚀 LISTADO DEL CARRITO PRINCIPAL CON EL BOTÓN "VER COMBO" INTERACTIVO */}
+        <div className="space-y-2 pt-2">
+          <h2 className="font-bold text-sm text-slate-300 uppercase tracking-wider px-1">Tu Carrito Actual</h2>
+          {processedCart.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-6 bg-slate-900/40 rounded-2xl border border-slate-800">
+              Seleccioná productos o combos para armar tu pedido.
             </p>
           ) : (
-            processedCart.map((item) => {
-              // 🚀 BUSGAMOS LOS NOMBRES REALES DE LOS PRODUCTOS DEL COMBO USANDO SU ID
+            processedCart.map((item, index) => {
               const comboComponents = (item.items || item.raw?.items || []).map((sub) => {
                 const foundProd = products.find((p) => p.id === sub.productId);
                 return {
@@ -536,29 +542,41 @@ export default function App() {
                 };
               });
 
+              const isExpanded = !!expandedCombos[index];
+
               return (
                 <div
-                  key={`${item.id}-${item.type}`}
-                  className="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 space-y-2 text-xs"
+                  key={`${item.id}-${item.type}-${index}`}
+                  className="bg-slate-900/90 p-3 rounded-2xl border border-slate-800 space-y-2 text-xs shadow-md"
                 >
                   <div className="flex items-center justify-between">
                     <div className="truncate flex-1 pr-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-semibold text-slate-100">{item.name}</span>
+                        
                         {comboComponents.length > 0 && (
-                          <span className="text-[9px] bg-fuchsia-500/20 text-fuchsia-400 font-bold px-1.5 py-0.5 rounded border border-fuchsia-500/30">
-                            Combo
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedCombos((prev) => ({ ...prev, [index]: !prev[index] }))
+                            }
+                            className="text-[10px] bg-fuchsia-500/20 text-fuchsia-300 font-bold px-2 py-0.5 rounded-lg border border-fuchsia-500/40 flex items-center gap-1 hover:bg-fuchsia-500/30 transition cursor-pointer"
+                          >
+                            <span>Ver combo</span>
+                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
                         )}
+
                         {item.isDiscountApplied && (
                           <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
                             Dto. Promo
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 pt-0.5">
+
+                      <div className="flex items-center gap-2 pt-1">
                         <span className="font-mono text-emerald-400 text-[11px] font-bold">
-                          {formatCurrency(item.effectivePrice * item.qty)}
+                          {formatCurrency(item.price * item.qty)}
                         </span>
                         {item.isDiscountApplied && (
                           <span className="font-mono text-[10px] text-slate-500 line-through">
@@ -568,7 +586,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                    <div className="flex items-center gap-2 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800">
                       <button
                         onClick={() => updateQty(item.id, item.type === 'promo', -1)}
                         className="text-slate-400 hover:text-white px-1 font-bold"
@@ -585,12 +603,11 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 🚀 DESPLIEGUE SEGURO HACIA ABAJO (Muestra los nombres reales y nunca se corta) */}
-                  {comboComponents.length > 0 && (
-                    <div className="bg-slate-900/90 border border-fuchsia-500/30 rounded-xl p-2 space-y-1">
+                  {comboComponents.length > 0 && isExpanded && (
+                    <div className="bg-slate-950 border border-fuchsia-500/30 rounded-xl p-2.5 space-y-1 animate-fadeIn">
                       <p className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Contiene:</p>
-                      {comboComponents.map((subItem, idx) => (
-                        <div key={idx} className="text-[11px] text-slate-300 flex items-center gap-1.5 font-mono">
+                      {comboComponents.map((subItem, subIdx) => (
+                        <div key={subIdx} className="text-[11px] text-slate-200 flex items-center gap-1.5 font-mono">
                           <span className="text-fuchsia-400">•</span> {subItem.qty}x {subItem.name}
                         </div>
                       ))}
@@ -600,6 +617,8 @@ export default function App() {
               );
             })
           )}
+        </div>
+      </main>
 
       {showCartModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -617,49 +636,87 @@ export default function App() {
               {processedCart.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-2">Tu carrito está vacío.</p>
               ) : (
-                processedCart.map((item) => (
-                  <div
-                    key={`${item.id}-${item.type}`}
-                    className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs"
-                  >
-                    <div className="truncate flex-1 pr-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white truncate">{item.name}</span>
-                        {item.isDiscountApplied && (
-                          <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
-                            Combo
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 pt-0.5">
-                        <span className="font-mono text-emerald-400 font-bold">
-                          {formatCurrency(item.price * item.qty)}
-                        </span>
-                        {item.isDiscountApplied && (
-                          <span className="font-mono text-[10px] text-slate-500 line-through">
-                            {formatCurrency(item.normalPrice * item.qty)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                processedCart.map((item, idxModal) => {
+                  const comboComponentsModal = (item.items || item.raw?.items || []).map((sub) => {
+                    const foundProd = products.find((p) => p.id === sub.productId);
+                    return {
+                      qty: sub.quantity || sub.qty || 1,
+                      name: foundProd ? foundProd.name : (sub.name || 'Producto')
+                    };
+                  });
+                  const isModalExpanded = !!expandedCombos[`modal-${idxModal}`];
 
-                    <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
-                      <button
-                        onClick={() => updateQty(item.id, item.type === 'promo', -1)}
-                        className="text-slate-400 hover:text-white px-1 font-bold"
-                      >
-                        -
-                      </button>
-                      <span className="font-mono font-bold text-white px-1">{item.qty}</span>
-                      <button
-                        onClick={() => updateQty(item.id, item.type === 'promo', 1)}
-                        className="text-slate-400 hover:text-white px-1 font-bold"
-                      >
-                        +
-                      </button>
+                  return (
+                    <div
+                      key={`modal-${item.id}-${idxModal}`}
+                      className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="truncate flex-1 pr-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-white">{item.name}</span>
+                            
+                            {comboComponentsModal.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedCombos((prev) => ({ ...prev, [`modal-${idxModal}`]: !prev[`modal-${idxModal}`] }))
+                                }
+                                className="text-[9px] bg-fuchsia-500/20 text-fuchsia-300 font-bold px-1.5 py-0.5 rounded border border-fuchsia-500/40 flex items-center gap-1 hover:bg-fuchsia-500/30 transition cursor-pointer"
+                              >
+                                <span>Ver combo</span>
+                                {isModalExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                            )}
+
+                            {item.isDiscountApplied && (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                                Dto. Promo
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="font-mono text-emerald-400 font-bold">
+                              {formatCurrency(item.price * item.qty)}
+                            </span>
+                            {item.isDiscountApplied && (
+                              <span className="font-mono text-[10px] text-slate-500 line-through">
+                                {formatCurrency(item.normalPrice * item.qty)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                          <button
+                            onClick={() => updateQty(item.id, item.type === 'promo', -1)}
+                            className="text-slate-400 hover:text-white px-1 font-bold"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-bold text-white px-1">{item.qty}</span>
+                          <button
+                            onClick={() => updateQty(item.id, item.type === 'promo', 1)}
+                            className="text-slate-400 hover:text-white px-1 font-bold"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {comboComponentsModal.length > 0 && isModalExpanded && (
+                        <div className="bg-slate-900 border border-fuchsia-500/30 rounded-xl p-2 space-y-1">
+                          <p className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Contiene:</p>
+                          {comboComponentsModal.map((subItem, subIdx) => (
+                            <div key={subIdx} className="text-[11px] text-slate-300 flex items-center gap-1.5 font-mono">
+                              <span className="text-fuchsia-400">•</span> {subItem.qty}x {subItem.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -787,7 +844,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* 🚀 RETIRO O ENVÍO CON AVISO PROFESIONAL */}
               <div className="space-y-2 pt-1">
                 <label className="text-slate-300 block font-bold flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Tipo de Entrega:
