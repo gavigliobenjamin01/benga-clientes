@@ -302,15 +302,16 @@ export default function App() {
  // 🚀 FORZAR EL CONTADOR A 19 EN FIREBASE PARA QUE EL PRÓXIMO SEA SIEMPRE 20
   const getNextOrderNumber = async () => {
     const counterRef = doc(db, 'counters', 'orderCounter');
-    
-    // Forzamos el documento a que su valor sea siempre 19 antes de avanzar, 
-    // o podés borrar el contador viejo en Firestore y dejar que esto lo cree limpio.
-    await setDoc(counterRef, { current: 19 }, { merge: true });
+    const counterSnap = await getDoc(counterRef);
 
-    // Actualizamos a 20 y devolvemos
-    await updateDoc(counterRef, { current: increment(1) });
-    const updatedSnap = await getDoc(counterRef);
-    return updatedSnap.data().current; // Esto devolverá exactamente 20
+    if (!counterSnap.exists()) {
+      await setDoc(counterRef, { current: 19 });
+      return 20;
+    } else {
+      await updateDoc(counterRef, { current: increment(1) });
+      const updatedSnap = await getDoc(counterRef);
+      return updatedSnap.data().current;
+    }
   };
 
   const handleSendOrder = async (e) => {
