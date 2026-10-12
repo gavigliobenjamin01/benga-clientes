@@ -724,4 +724,249 @@ export default function App() {
               <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> ¿Te falta algo? Agregalo acá:
               </span>
-              <div className="
+              <div className="grid grid-cols-2 gap-2 relative">
+                
+                <div className="relative">
+                  <button
+                    onClick={() => setShowIceSelector(!showIceSelector)}
+                    className="w-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                  >
+                    <span>🧊</span> Hielo (Elegir)
+                  </button>
+
+                  {showIceSelector && (
+                    <div className="absolute bottom-full left-0 mb-2 w-full bg-slate-950 border border-sky-500/50 rounded-2xl p-2 shadow-2xl z-50 space-y-1.5 backdrop-blur-md animate-fadeIn">
+                      <div className="flex justify-between items-center px-1 pb-1 border-b border-slate-800">
+                        <span className="text-[10px] font-bold text-sky-400 uppercase">Seleccioná Hielo:</span>
+                        <button onClick={() => setShowIceSelector(false)} className="text-slate-400 hover:text-white">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {iceOptions.length === 0 ? (
+                        <p className="text-[10px] text-slate-500 text-center py-2">No hay hielos disponibles.</p>
+                      ) : (
+                        iceOptions.map((ice) => {
+                          const iceStock = Number(ice.stock ?? 0);
+                          const isIceOut = iceStock <= 0;
+                          const comboP = Number(ice.comboPrice || 0);
+                          const normalP = Number(ice.sellPrice || ice.price || 0);
+                          const isComboEligible = hasPromoInCart && comboP > 0;
+                          const finalIcePrice = isComboEligible ? comboP : normalP;
+
+                          return (
+                            <button
+                              key={ice.id}
+                              disabled={isIceOut}
+                              onClick={() => {
+                                if (!isIceOut) {
+                                  addToCart({ ...ice, isPromo: false });
+                                  setShowIceSelector(false);
+                                }
+                              }}
+                              className={`w-full text-left p-2 rounded-xl transition flex justify-between items-center text-xs border ${
+                                isIceOut 
+                                  ? 'bg-slate-950 opacity-50 border-slate-900 cursor-not-allowed' 
+                                  : 'bg-slate-900 hover:bg-sky-500/20 border-slate-800 hover:border-sky-500/40'
+                              }`}
+                            >
+                              <span className={`font-medium truncate pr-1 ${isIceOut ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                                {ice.name}
+                              </span>
+                              <div className="text-right whitespace-nowrap">
+                                {isIceOut ? (
+                                  <span className="text-[10px] text-red-400 font-bold block">Sin stock</span>
+                                ) : (
+                                  <>
+                                    <span className="font-mono text-emerald-400 font-bold block">
+                                      {formatCurrency(finalIcePrice)}
+                                    </span>
+                                    {isComboEligible && (
+                                      <span className="font-mono text-[9px] text-slate-500 line-through block">
+                                        {formatCurrency(normalP)}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => handleAddSuggested(['vaso'])}
+                  className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl py-2 flex items-center justify-center gap-1.5 transition text-xs font-bold"
+                >
+                  <span>🥤</span> Vaso 1L
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleSendOrder} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-fuchsia-400" /> Tu Nombre / Apodo:
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Ej: Juan Pérez"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> ¿Cómo vas a abonar?:
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const mode = e.target.value;
+                    setPaymentMethod(mode);
+                    if (mode === 'Mixto') {
+                      const half = Math.round(cartTotal / 2);
+                      setPaidEfectivo(half.toString());
+                      setPaidTransferencia((cartTotal - half).toString());
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-fuchsia-500"
+                >
+                  <option value="Efectivo">💵 Efectivo al entregar</option>
+                  <option value="Transferencia">📲 Transferencia / Mercado Pago</option>
+                  <option value="Mixto">🔀 Pago Mixto (Parte Efec + Parte Transf)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <label className="text-slate-300 block font-bold flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-fuchsia-400" /> Tipo de Entrega:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('retiro')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'retiro'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'retiro' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'retiro' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Retiro en Local
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryType('envio')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                      deliveryType === 'envio'
+                        ? 'bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-300 shadow-md shadow-fuchsia-500/10'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${deliveryType === 'envio' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-slate-600'}`}>
+                      {deliveryType === 'envio' && <span className="w-1.5 h-1.5 bg-slate-950 rounded-full" />}
+                    </span>
+                    Envío a Domicilio
+                  </button>
+                </div>
+
+                {deliveryType === 'envio' && (
+                  <div className="space-y-2 pt-1 animate-fadeIn">
+                    <input
+                      required={deliveryType === 'envio'}
+                      type="text"
+                      placeholder="Ingresá tu dirección (Calle y número, depto)"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full bg-slate-950 border border-fuchsia-500/40 rounded-xl p-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    />
+                    <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 p-2.5 rounded-xl text-[11px] text-fuchsia-200 leading-relaxed">
+                      🛵 <strong>Aviso de Envío:</strong> El costo de envío se calcula según la distancia (a partir de $1.500 en adelante según las cuadras). Se te confirmará al coordinar la entrega.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {paymentMethod === 'Mixto' && (
+                <div className="bg-slate-950 p-3 rounded-2xl border border-fuchsia-500/40 space-y-2">
+                  <span className="text-[11px] font-bold text-fuchsia-400 block uppercase">
+                    Dividir Pago Mixto (Total: {formatCurrency(cartTotal)})
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Monto Efectivo ($):</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={paidEfectivo}
+                        onChange={(e) => handleEfectivoChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Monto MP / Transf ($):</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={paidTransferencia}
+                        onChange={(e) => handleTransferenciaChange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-between items-center text-sm">
+                <span className="font-bold text-slate-300 uppercase">TOTAL A PAGAR:</span>
+                <span className="font-mono text-2xl font-black text-fuchsia-400">{formatCurrency(cartTotal)}</span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSending || processedCart.length === 0}
+                className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-800 text-slate-950 font-bold py-3.5 rounded-2xl transition shadow-lg shadow-fuchsia-500/20 flex items-center justify-center gap-2 text-sm mt-2"
+              >
+                <Send className="w-5 h-5" /> {isSending ? 'Enviando...' : 'Enviar Pedido por WhatsApp'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {orderSentSuccess && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/40">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+
+            <div>
+              <h3 className="font-bold text-lg text-white">¡Pedido Enviado! ✨</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Tu solicitud ya llegó a la caja de Benga Drinks. Te contactaremos enseguida para confirmar la entrega.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setOrderSentSuccess(false)}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 rounded-2xl text-xs transition"
+            >
+              Volver al Catálogo
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
