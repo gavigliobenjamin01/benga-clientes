@@ -16,7 +16,8 @@ import {
   Image as ImageIcon,
   AlertCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Filter
 } from 'lucide-react';
 
 const formatCurrency = (val) => {
@@ -55,6 +56,7 @@ export default function App() {
   // BÚSQUEDA Y FILTRADO (INICIA DIRECTAMENTE EN PROMOS & COMBOS)
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('🔥 Promos & Combos');
+  const [selectedPromoCategory, setSelectedPromoCategory] = useState('Todas'); // Sub-filtro de promos
 
   // ESTADO PARA LA MINI PESTAÑITA DE SELECCIÓN DE HIELO
   const [showIceSelector, setShowIceSelector] = useState(false);
@@ -129,21 +131,47 @@ export default function App() {
     });
   }, [cart, hasPromoInCart]);
 
-  // CATEGORÍAS SIN LA OPCIÓN "TODAS"
+  // CATEGORÍAS PRINCIPALES
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.map((p) => p.category))).filter(Boolean);
     return ['🔥 Promos & Combos', ...cats];
   }, [products]);
 
+  // SUB-CATEGORÍAS PRESENTES EN LOS COMBOS EXISTENTES
+  const promoSubCategories = useMemo(() => {
+    const subCats = new Set();
+    promos.forEach((pr) => {
+      (pr.items || []).forEach((item) => {
+        const targetId = item.productId || item.id;
+        const pObj = products.find((p) => p.id === targetId);
+        if (pObj && pObj.category) {
+          subCats.add(pObj.category);
+        }
+      });
+    });
+    return ['Todas', ...Array.from(subCats)];
+  }, [promos, products]);
+
   const filteredCatalog = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
 
     const promoMatches = (pr) => {
+      // Filtrado por subcategoría de la promo
+      if (selectedPromoCategory !== 'Todas') {
+        const containsCategory = (pr.items || []).some((item) => {
+          const targetId = item.productId || item.id;
+          const pObj = products.find((p) => p.id === targetId);
+          return pObj && (pObj.category || '').toLowerCase() === selectedPromoCategory.toLowerCase();
+        });
+        if (!containsCategory) return false;
+      }
+
       if (!term) return true;
       const nameMatch = (pr.name || '').toLowerCase().includes(term);
       const descMatch = (pr.description || '').toLowerCase().includes(term);
       const itemsMatch = (pr.items || []).some((item) => {
-        const pObj = products.find((p) => p.id === item.productId);
+        const targetId = item.productId || item.id;
+        const pObj = products.find((p) => p.id === targetId);
         if (!pObj) return false;
         return (
           (pObj.name || '').toLowerCase().includes(term) ||
@@ -178,7 +206,7 @@ export default function App() {
     const matchingProducts = prods.map((p) => ({ ...p, isPromo: false }));
 
     return [...matchingPromos, ...matchingProducts];
-  }, [products, promos, searchTerm, selectedCategory]);
+  }, [products, promos, searchTerm, selectedCategory, selectedPromoCategory]);
 
   const addToCart = (item) => {
     if (item.isPromo) {
@@ -407,7 +435,12 @@ export default function App() {
           {categories.map((cat) => (
             <button
               key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => {
+                setSelectedCategory(cat);
+                if (cat !== '🔥 Promos & Combos') {
+                  setSelectedPromoCategory('Todas');
+                }
+              }}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
                 selectedCategory === cat
                   ? 'bg-fuchsia-500 text-slate-950 border-fuchsia-400 shadow-md shadow-fuchsia-500/20'
@@ -418,6 +451,31 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {/* SUB-FILTRO DE PROMOS */}
+        {selectedCategory === '🔥 Promos & Combos' && (
+          <div className="bg-slate-950/80 p-3 rounded-2xl border border-fuchsia-500/30 space-y-2 animate-fadeIn">
+            <span className="text-[11px] font-bold text-fuchsia-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-fuchsia-400" /> ¿Qué tipo de promos buscás?
+            </span>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+              {promoSubCategories.map((subCat) => (
+                <button
+                  key={subCat}
+                  type="button"
+                  onClick={() => setSelectedPromoCategory(subCat)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
+                    selectedPromoCategory === subCat
+                      ? 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/60 shadow-sm'
+                      : 'bg-slate-900 text-slate-400 border-slate-800/80 hover:border-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  {subCat === 'Todas' ? '🍹 Todas las Promos' : subCat}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {hasPromoInCart && (
           <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-2xl flex items-center gap-2 text-xs text-amber-300">
